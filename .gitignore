@@ -15,3 +15,6 @@ qa-*.png
 # لقطات تشخيص مؤقتة
 current-login.png
 public/diag.png
+
+.vercel
+.env*

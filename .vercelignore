@@ -1,0 +1,23 @@
+# الاعتماديات والبناء — Vercel بيبنيهم بنفسه
+node_modules
+.next
+.next-dev
+out
+build
+
+# ملفات البيئة (المفاتيح تتضاف من إعدادات Vercel)
+.env
+.env.local
+.env.*.local
+
+# سكربتات QA والتشخيص — فيها بيانات اعتماد
+qa-*.mjs
+probe-*.mjs
+admin-*.mjs
+qa-*.png
+current-login.png
+public/diag.png
+
+# لقطات ولوجات مؤقتة
+*.log
+.vercel
