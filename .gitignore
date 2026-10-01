@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.next-dev/
+.env*
+!.env.example
+*.log
+
+# سكربتات QA والتشخيص المحلية — فيها بيانات اعتماد، ممنوع ترفع
+qa-*.mjs
+probe-*.mjs
+admin-*.mjs
+qa-*.png
+*.local
+
+# لقطات تشخيص مؤقتة
+current-login.png
+public/diag.png

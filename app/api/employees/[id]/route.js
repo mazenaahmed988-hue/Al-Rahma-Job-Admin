@@ -1,0 +1,81 @@
+import { NextResponse } from 'next/server';
+import { createClient, isAdmin } from '@/lib/supabase/server';
+import { getAdminClient, hasContactColumns, isMissingContactColumn } from '@/lib/supabase/admin';
+
+const NID = /^[0-9]{14}$/;
+
+export async function PATCH(request, { params }) {
+  const supabase = await createClient();
+  const result = await supabase.auth.getUser();
+  if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
+
+  const { id: routeId } = await params;
+  const body = await request.json();
+  const id = routeId ?? body.id;
+  if (!id) return NextResponse.json({ error: 'مفيش معرف موظف' }, { status: 400 });
+  const { id: _ignored, ...patch } = body;
+
+  const update = {};
+  if (patch.full_name !== undefined) {
+    const name = String(patch.full_name).trim();
+    if (name.length < 3) return NextResponse.json({ error: 'اسم الموظف لازم يكون 3 حروف على الأقل' }, { status: 400 });
+    update.full_name = name;
+  }
+  if (patch.national_id !== undefined) {
+    const nid = String(patch.national_id).trim();
+    if (!NID.test(nid)) return NextResponse.json({ error: 'الرقم القومي لازم يكون 14 رقم' }, { status: 400 });
+    update.national_id = nid;
+  }
+  if (patch.job_title !== undefined) {
+    const title = String(patch.job_title).trim();
+    if (title.length < 2) return NextResponse.json({ error: 'الوظيفة مطلوبة' }, { status: 400 });
+    update.job_title = title;
+  }
+  const withContacts = await hasContactColumns();
+  if (patch.phone !== undefined && withContacts) update.phone = String(patch.phone).trim() || null;
+  if (patch.address !== undefined && withContacts) update.address = String(patch.address).trim() || null;
+  if (patch.is_active !== undefined) update.is_active = Boolean(patch.is_active);
+
+  if (Object.keys(update).length === 0) return NextResponse.json({ error: 'مفيش بيانات للتعديل' }, { status: 400 });
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.from('employees').update(update).eq('id', id).select().single();
+  if (error) {
+    if (isMissingContactColumn(error)) {
+      return NextResponse.json({ error: 'ترحيل قاعدة البيانات لسه مش متنفذ. شغّل supabase/migrations/0002_employee_contacts_and_avatars.sql' }, { status: 503 });
+    }
+    const duplicate = error.code === '23505';
+    return NextResponse.json({ error: duplicate ? 'الرقم القومي ده مسجل قبل كده' : error.message }, { status: 400 });
+  }
+  return NextResponse.json({ employee: data });
+}
+
+export async function DELETE(_request, { params }) {
+  const supabase = await createClient();
+  const result = await supabase.auth.getUser();
+  if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
+
+  const { id } = await params;
+  if (!id) return NextResponse.json({ error: 'مفيش معرف موظف' }, { status: 400 });
+
+  const admin = getAdminClient();
+
+  // حماية: ممنوع حذف موظف لسه عليه ملفات
+  const { count, error: countError } = await admin
+    .from('payslips')
+    .select('id', { count: 'exact', head: true })
+    .eq('employee_id', id);
+  if (countError) return NextResponse.json({ error: countError.message }, { status: 500 });
+  if (count && count > 0) {
+    return NextResponse.json({ error: 'يرجى حذف ملفات الموظف أولاً', files: count }, { status: 409 });
+  }
+
+  const { data: employee } = await admin.from('employees').select('avatar_url').eq('id', id).maybeSingle();
+  const { error } = await admin.from('employees').delete().eq('id', id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // نمسح صورة الموظف من الـ storage بعد نجاح الحذف
+  if (employee?.avatar_url) await admin.storage.from('avatars').remove([employee.avatar_url]);
+
+  return NextResponse.json({ deleted: id });
+}
