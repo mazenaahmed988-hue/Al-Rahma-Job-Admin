@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
-import { Files, LayoutDashboard, LogOut, Mail, Menu, Tags, UsersRound, X } from 'lucide-react';
+import { BookOpen, Files, LayoutDashboard, LogOut, Mail, Menu, Tags, UsersRound, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/browser';
+import HelpCenter from '@/components/help-center';
 
 export default function DashboardShell({ email, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -17,6 +19,17 @@ export default function DashboardShell({ email, children }) {
   const isFiles = pathname?.startsWith('/dashboard/files') ?? false;
   const isCategories = pathname?.startsWith('/dashboard/categories') ?? false;
   const isMessages = pathname?.startsWith('/dashboard/messages') ?? false;
+
+  // القسم الحالي — بيتغذى لمركز المساعدة عشان يعرض محتوى القسم الصح
+  const currentSection = isEmployees ? 'employees' : isFiles ? 'files' : isCategories ? 'categories' : isMessages ? 'messages' : 'overview';
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') setHelpOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   async function signOut() {
     setSigningOut(true);
     await createClient().auth.signOut();
@@ -42,9 +55,11 @@ export default function DashboardShell({ email, children }) {
       <aside className="sidebar glass">{sidebar}</aside>
       <AnimatePresence>{menuOpen && <><motion.button type="button" className="menu-backdrop" aria-label="إغلاق القائمة" onClick={() => setMenuOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.aside className="sidebar mobile-sidebar glass" initial={{ x: 310 }} animate={{ x: 0 }} exit={{ x: 310 }} transition={{ type: 'spring', damping: 28 }}><button type="button" className="close-menu" aria-label="إغلاق القائمة" onClick={() => setMenuOpen(false)}><X size={23} /></button>{sidebar}</motion.aside></>}</AnimatePresence>
       <div className="dashboard-main">
-        <header className="topbar glass"><div className="topbar-start"><button className="hamburger" aria-label="فتح القائمة" type="button" onClick={() => setMenuOpen(true)}><Menu size={23} /></button><div className="breadcrumb">لوحة الإدارة <span>/</span> <strong>{isEmployees ? 'إدارة الموظفين' : isFiles ? 'مركز الملفات' : isCategories ? 'الأقسام' : isMessages ? 'صندوق الرسائل' : 'نظرة عامة'}</strong></div></div><div className="topbar-end"><span className="topbar-status"><span className="status-dot" /> لوحة المسؤول</span><div className="avatar" aria-label="حساب المسؤول">{email?.charAt(0).toUpperCase() || 'A'}</div></div></header>
+        <header className="topbar glass"><div className="topbar-start"><button className="hamburger" aria-label="فتح القائمة" type="button" onClick={() => setMenuOpen(true)}><Menu size={23} /></button><div className="breadcrumb">لوحة الإدارة <span>/</span> <strong>{isEmployees ? 'إدارة الموظفين' : isFiles ? 'مركز الملفات' : isCategories ? 'الأقسام' : isMessages ? 'صندوق الرسائل' : 'نظرة عامة'}</strong></div></div><div className="topbar-end"><button type="button" className="help-button topbar-help" onClick={() => setHelpOpen(true)} title="اقرأ التعليمات"><BookOpen size={17} /><span>اقرأ التعليمات</span></button><span className="topbar-status"><span className="status-dot" /> لوحة المسؤول</span><div className="avatar" aria-label="حساب المسؤول">{email?.charAt(0).toUpperCase() || 'A'}</div></div></header>
         <main className="dashboard-content">{children}</main>
       </div>
+
+      <HelpCenter open={helpOpen} onClose={() => setHelpOpen(false)} section={currentSection} />
     </div>
   );
 }

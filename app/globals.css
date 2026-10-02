@@ -819,4 +819,163 @@ button:disabled { opacity:.65; cursor:wait; }
   .entry-toggle-wrap { flex: 1; }
   .entry-toggle-wrap > button:first-child { flex: 1; }
   .help-table th, .help-table td { padding: 10px 11px; font-size: 10.5px; }
+}/* ══════════════════════════════════════════════════════════
+   مركز المساعدة الموحد (Global Help Center) — Phase 1
+   نظام الألوان والكلاسات هنا كلها يدوي بالظبط زي باقي الموقع
+   (مفيش Tailwind) عشان نحافظ على توحيد الشكل (Consistency).
+   ══════════════════════════════════════════════════════════ */
+
+/* زر (اقرأ التعليمات) في التوب بار */
+.topbar-help {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 14px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .6);
+  background: rgba(255, 255, 255, .55);
+  color: #1f5f4b;
+  font: inherit; font-size: 12.5px; font-weight: 800;
+  cursor: pointer;
+  transition: background .18s ease, transform .18s ease;
+  white-space: nowrap;
+}
+.topbar-help:hover { background: rgba(255, 255, 255, .85); transform: translateY(-1px); }
+.topbar-help:focus-visible { outline: 2px solid #1f5f4b; outline-offset: 2px; }
+
+/* زر (اقرأ التعليمات) جوه كارت الإدخال */
+.entry-toggle .help-button {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 36px; padding: 0 13px;
+  border-radius: 10px;
+  border: 1px dashed #b9d8cc;
+  background: #f2faf7;
+  color: #1f5f4b;
+  font: inherit; font-size: 12px; font-weight: 800;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease;
+  white-space: nowrap;
+}
+.entry-toggle .help-button:hover { background: #e4f4ee; border-color: #8dc2b1; }
+.entry-toggle .help-button:focus-visible { outline: 2px solid #1f5f4b; outline-offset: 2px; }
+
+/* المودال الكبير */
+.help-modal--lg { max-width: 880px; width: min(880px, 94vw); }
+
+/* تابات الأقسام */
+.help-center { display: flex; flex-direction: column; min-height: 0; }
+.help-tabs {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  padding: 12px 22px;
+  border-bottom: 1px solid #e3ece8;
+}
+.help-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 1px solid #dbe8e2;
+  background: #f6faf8;
+  color: #3c6155;
+  font: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
+}
+.help-tab:hover { background: #ecf6f2; }
+.help-tab.is-active {
+  background: #1f5f4b; border-color: #1f5f4b; color: #fff;
+  box-shadow: 0 4px 12px rgba(31, 95, 75, .22);
+}
+.help-tab:focus-visible { outline: 2px solid #1f5f4b; outline-offset: 2px; }
+
+.help-center-body { max-height: min(58vh, 560px); overflow-y: auto; }
+.help-center-body .help-lead strong { color: #1f5f4b; }
+
+/* ── الأكورديون (الأجزاء القابلة للطي) ── */
+.accordion {
+  border: 1px solid #e3ece8;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .68);
+  margin-bottom: 11px;
+  overflow: hidden;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.accordion:last-child { margin-bottom: 0; }
+.accordion.is-open { border-color: #bcd9ce; box-shadow: 0 6px 18px rgba(31, 95, 75, .09); }
+
+.accordion-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: 0;
+  font: inherit; font-size: 13.5px; font-weight: 800;
+  color: #1d4a3c;
+  text-align: right;
+  cursor: pointer;
+  transition: background .16s ease;
+}
+.accordion-head:hover { background: #f1f8f5; }
+.accordion-head:focus-visible { outline: 2px solid #1f5f4b; outline-offset: -2px; }
+
+.accordion-title { display: inline-flex; align-items: center; gap: 8px; }
+.accordion-icon { font-size: 15px; line-height: 1; }
+.accordion-badge {
+  padding: 3px 9px;
+  border-radius: 7px;
+  background: #e8f4ef;
+  color: #1f5f4b;
+  font-size: 10.5px; font-weight: 800;
+}
+.accordion-caret { flex: none; color: #6f948a; transition: transform .28s cubic-bezier(.16, 1, .3, 1); }
+.accordion.is-open .accordion-caret { transform: rotate(180deg); }
+
+.accordion-body { overflow: hidden; }
+.accordion-content { padding: 2px 16px 16px; border-top: 1px dashed #e3ece8; padding-top: 14px; }
+
+.accordion-goal {
+  margin: 0 0 12px;
+  font-size: 12.5px; line-height: 1.9;
+  color: #456b5f;
+}
+.accordion-goal strong { color: #1f5f4b; }
+
+.accordion-content .help-steps { margin-top: 0; }
+.accordion-content .help-table-wrap { margin-top: 12px; }
+
+/* نص داخل خلايا الجدول (بعدد الأعمدة) */
+.help-cell-text { font-weight: 600; color: #3c6155; }
+
+/* معاينة حيّة للّصق المجمع */
+.bulk-live-preview { margin-bottom: 4px; }
+.bulk-live-preview .help-table-wrap { margin-top: 8px; }
+
+/* صف العناوين فوق المربع ( hint + أيقونة ❓ ) */
+.entry-bulk-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 10px;
+}
+.entry-bulk-head .bulk-hint { margin: 0; }
+.entry-bulk-head .icon-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: none;
+  border-radius: 10px;
+  border: 1px solid #dbe8e2;
+  background: #f6faf8;
+  color: #1f5f4b;
+  cursor: pointer;
+  transition: background .16s ease;
+}
+.entry-bulk-head .icon-button:hover { background: #e4f4ee; }
+.entry-bulk-head .icon-button:focus-visible { outline: 2px solid #1f5f4b; outline-offset: 2px; }
+
+/* موبايل */
+@media (max-width: 720px) {
+  .help-modal--lg { width: 96vw; }
+  .help-tabs { padding: 10px 14px; }
+  .help-tab { font-size: 11.5px; padding: 7px 10px; }
+  .help-center-body { max-height: 60vh; }
+  .accordion-head { padding: 12px 13px; font-size: 12.5px; }
+  .accordion-content { padding: 12px 13px 14px; }
+}
+@media (max-width: 520px) {
+  .topbar-help span { display: none; }
+  .topbar-help { width: 38px; padding: 0; justify-content: center; }
 }

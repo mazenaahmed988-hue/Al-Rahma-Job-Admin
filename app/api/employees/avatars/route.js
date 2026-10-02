@@ -14,8 +14,17 @@ export async function GET() {
   const avatars = {};
   for (const row of data ?? []) {
     if (!row.avatar_url) continue;
-    const { data: signed } = await admin.storage.from('avatars').createSignedUrl(row.avatar_url, 60 * 60 * 24);
-    if (signed?.signedUrl) avatars[row.id] = signed.signedUrl;
+    try {
+      // المسار ممكن يكون رابط كامل أو مسار ناقص — في الحالتين بنتخطى بلطف
+      if (/^https?:\/\//i.test(row.avatar_url)) { avatars[row.id] = row.avatar_url; continue; }
+      const { data: signed, error: signError } = await admin.storage
+        .from('avatars')
+        .createSignedUrl(row.avatar_url, 60 * 60 * 24);
+      if (signError) continue;
+      if (signed?.signedUrl) avatars[row.id] = signed.signedUrl;
+    } catch {
+      // صورة واحدة فاشلة مينفعش توقف باقي الصور
+    }
   }
   return NextResponse.json({ avatars });
 }
