@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle, CheckCircle2, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen,
-  Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
+  HelpCircle, Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
 } from 'lucide-react';
 
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -74,6 +74,7 @@ export default function FilesView({ employees, initialFiles }) {
   const [bulkText, setBulkText] = useState('');
   const [bulkRows, setBulkRows] = useState([]);
   const [serverOpen, setServerOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [editing, setEditing] = useState(null);
   const [query, setQuery] = useState('');
@@ -232,8 +233,16 @@ export default function FilesView({ employees, initialFiles }) {
       {/* 2) منطقة الإدخال الذكي */}
       <div className="entry-card glass">
         <div className="entry-toggle" role="group" aria-label="طريقة الإدخال">
-          <button type="button" className={mode === 'single' ? 'is-active' : ''} onClick={() => setMode('single')} aria-pressed={mode === 'single'}><UserRound size={15} /> إدخال فردي</button>
-          <button type="button" className={mode === 'bulk' ? 'is-active' : ''} onClick={() => setMode('bulk')} aria-pressed={mode === 'bulk'}><Table2 size={15} /> لصق مجمع من الإكسيل</button>
+          <div className="entry-toggle-group">
+            <button type="button" className={mode === 'single' ? 'is-active' : ''} onClick={() => setMode('single')} aria-pressed={mode === 'single'}><UserRound size={15} /> إدخال فردي</button>
+            <span className="entry-toggle-wrap">
+              <button type="button" className={mode === 'bulk' ? 'is-active' : ''} onClick={() => setMode('bulk')} aria-pressed={mode === 'bulk'}><Table2 size={15} /> لصق مجمع من الإكسيل</button>
+              <button type="button" className="help-button" onClick={() => setHelpOpen(true)} title="اقرأ التعليمات والدليل">
+                <HelpCircle size={16} />
+                <span>اقرأ التعليمات والدليل</span>
+              </button>
+            </span>
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
@@ -430,6 +439,86 @@ export default function FilesView({ employees, initialFiles }) {
           </div>
         )}
       </div>
+
+      {/* Modal مساعدة اللصق المجمع */}
+      <AnimatePresence>
+        {helpOpen && (
+          <motion.div className="modal-backdrop modal-backdrop--center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .22 }} onClick={() => setHelpOpen(false)}>
+            <motion.div className="emp-modal glass help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title" initial={{ opacity: 0, scale: .92, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .95, y: 10 }} transition={{ duration: .28, ease: [0.16, 1, 0.3, 1] }} onClick={(e) => e.stopPropagation()}>
+              <div className="emp-modal-head">
+                <div>
+                  <span className="section-kicker">دليل الاستخدام</span>
+                  <h2 id="help-modal-title">اللصق المجمع من الإكسيل <span aria-hidden="true">🪄</span></h2>
+                </div>
+                <button type="button" className="emp-close" onClick={() => setHelpOpen(false)} aria-label="إغلاق"><X size={19} /></button>
+              </div>
+
+              <div className="help-body">
+                <p className="help-lead">تخيل إنك فاتح شيت الإكسيل، وفيه 100 موظف. بدل ما تدخلهم واحد واحد، هتعمل الآتي:</p>
+
+                <ol className="help-steps">
+                  <li>
+                    <span className="help-step-badge">1</span>
+                    <div>
+                      <strong>النسخ <span className="help-en">(Copy)</span></strong>
+                      <p>هتحدد الـ 100 صف من الإكسيل بالماوس وتعملهم 'نسخ' (Ctrl+C).</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span className="help-step-badge">2</span>
+                    <div>
+                      <strong>اللصق <span className="help-en">(Paste)</span></strong>
+                      <p>هتيجي في المربع الكبير اللي في الموقع اللي اسمه (بيانات الإكسيل) وتعمل 'لصق' (Ctrl+V).</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span className="help-step-badge">3</span>
+                    <div>
+                      <strong>زرار 'تحليل البيانات'</strong>
+                      <p>أول ما تدوس على الزرار ده، السيستم هيقرا الكلام المنسوخ، ويفهم إن المسافات دي عبارة عن أعمدة الإكسيل، ويفككهم في جزء من الثانية!</p>
+                    </div>
+                  </li>
+                </ol>
+
+                <p className="help-sub">عشان تتخيلها، بص الجدول ده بيوضحلك السيستم بيترجم اللصق إزاي:</p>
+
+                <div className="help-table-wrap">
+                  <table className="help-table">
+                    <thead>
+                      <tr>
+                        <th>اللي لزقته في المربع (من الإكسيل)</th>
+                        <th>بعد الضغط على 'تحليل البيانات' (السيستم بيفهم إيه)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span className="mono">29001011501234 (مسافة) 3 (مسافة) 2026 (مسافة) K:\1.pdf</span></td>
+                        <td>بيعمل كارت منفصل للموظف (أحمد)، شهر (3)، سنة (2026)، ومساره جاهز</td>
+                      </tr>
+                      <tr>
+                        <td><span className="mono">29666778889999 (مسافة) 4 (مسافة) 2026 (مسافة) K:\2.pdf</span></td>
+                        <td>بيعمل كارت منفصل للموظف (مصطفى)، شهر (4)، سنة (2026)، ومساره جاهز</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="help-note">
+                  <span className="help-note-icon" aria-hidden="true">💡</span>
+                  <div>
+                    <strong>إيه فايدة زرار 'مسح'؟</strong>
+                    <p>لو لزقت البيانات واكتشفت إنك نسخت عواميد غلط أو دوست بالغلط، دوس 'مسح' عشان المربع يفضى تماماً وتبدأ من جديد على نظافة.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="emp-form-actions">
+                <button type="button" className="primary-button" onClick={() => setHelpOpen(false)}><CheckCircle2 size={17} /> فهمت، شكراً</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Modal بيانات الاتصال الوهمية */}
       <AnimatePresence>

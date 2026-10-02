@@ -636,3 +636,187 @@ button:disabled { opacity:.65; cursor:wait; }
   .server-grid { grid-template-columns: 1fr; }
   .path-cell { max-width: 190px; }
 }
+/* ==========================================================
+   أيقونة المساعدة + Modal شرح اللصق المجمع
+   ========================================================== */
+
+.entry-toggle-group {
+  display: inline-flex; gap: 4px; padding: 5px;
+  border-radius: 13px; background: #f2f8f6;
+  margin-bottom: 20px; flex-wrap: wrap;
+}
+.entry-toggle-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+/* زر الدليل: لون ذهبي مميز结了，是为了 يلفت النظر */
+.entry-toggle-wrap .help-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-inline-start: 8px;
+  height: 38px;
+  padding: 0 14px 0 12px;
+  border: 1.5px solid #e8c87a;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fdf6e3, #fbeec9);
+  color: #9a6f14;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(196,148,44,.16);
+  transition: transform .2s, box-shadow .2s, background .2s, border-color .2s;
+}
+.entry-toggle-wrap .help-button:hover {
+  color: #7d5809;
+  border-color: #dcb354;
+  background: linear-gradient(135deg, #fdf1d2, #f8e3ab);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(196,148,44,.28);
+}
+.entry-toggle-wrap .help-button:active { transform: translateY(0); }
+.entry-toggle-wrap .help-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(196,148,44,.32);
+}
+.entry-toggle-wrap .help-button svg { flex: none; }
+@media (max-width: 620px) {
+  .entry-toggle-wrap .help-button span { display: none; }
+  .entry-toggle-wrap .help-button { padding: 0 10px; }
+}
+.entry-toggle-wrap > button:first-child {
+  padding-inline-start: 30px;
+}
+
+/* محتوى الـModal */
+.help-modal { width: min(720px, 100%); }
+.help-modal .emp-modal-head h2 { font-size: 19px; }
+
+.help-body { display: flex; flex-direction: column; gap: 15px; }
+
+.help-lead {
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 13px;
+  background: #f4faf8;
+  border: 1px solid #dcece8;
+  color: #3c5b5f;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.85;
+}
+
+/* الخطوات المرقّمة */
+.help-steps {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 11px;
+  counter-reset: help-step;
+}
+.help-steps li {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 13px 15px;
+  border-radius: 13px;
+  background: rgba(255,255,255,.75);
+  border: 1px solid #e6efed;
+  transition: border-color .2s, transform .2s;
+}
+.help-steps li:hover { border-color: #b9ddd4; transform: translateX(-3px); }
+.help-step-badge {
+  width: 27px; height: 27px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #17a08f, #0d7a6b);
+  color: #fff; font-size: 12px; font-weight: 800;
+  box-shadow: 0 4px 10px rgba(13,122,107,.26);
+  direction: ltr;
+}
+.help-steps li > div { min-width: 0; }
+.help-steps strong { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 3px; }
+.help-en {
+  font-family: Consolas, Menlo, monospace;
+  font-size: 10px; font-weight: 700;
+  color: #93a7a8; direction: ltr;
+  background: #f2f8f6;
+  padding: 1px 6px; border-radius: 5px;
+}
+.help-steps p {
+  margin: 0;
+  font-size: 11.5px; line-height: 1.85;
+  color: #5b7578; font-weight: 600;
+}
+
+.help-sub {
+  margin: 3px 0 0;
+  font-size: 12px; font-weight: 800; color: #2b4a47;
+}
+
+/* جدول الترجمة */
+.help-table-wrap {
+  overflow-x: auto;
+  border-radius: 13px;
+  border: 1px solid #e3efec;
+  background: rgba(255,255,255,.72);
+}
+.help-table { width: 100%; border-collapse: collapse; }
+.help-table th {
+  text-align: right;
+  padding: 12px 15px;
+  font-size: 11px; font-weight: 800;
+  color: #2b4a47;
+  background: rgba(240,247,245,.85);
+  white-space: normal;
+  line-height: 1.6;
+  border-bottom: 1px solid #e3efec;
+}
+.help-table td {
+  padding: 13px 15px;
+  font-size: 11.5px; line-height: 1.8;
+  color: #4d6b6f; font-weight: 600;
+  border-top: 1px solid #edf4f2;
+  vertical-align: top;
+}
+.help-table tbody tr:first-child td { border-top: 0; }
+.help-table tbody tr:hover { background: rgba(238,247,245,.55); }
+.help-table td .mono {
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: #0d7a6b;
+  background: #eef8f4;
+  padding: 5px 8px;
+  border-radius: 7px;
+  white-space: normal;
+  word-break: break-all;
+}
+
+/* ملاحظة زرار المسح */
+.help-note {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 16px;
+  border-radius: 13px;
+  background: #fdf7ec;
+  border: 1px solid #f3e4c9;
+}
+.help-note-icon { font-size: 17px; line-height: 1.4; flex: none; }
+.help-note strong {
+  display: block; font-size: 12px; font-weight: 800;
+  color: #8a5a1c; margin-bottom: 4px;
+}
+.help-note p {
+  margin: 0;
+  font-size: 11.5px; line-height: 1.85;
+  color: #8a6533; font-weight: 600;
+}
+
+.help-modal .emp-form-actions { margin-top: 18px; }
+
+@media (max-width: 620px) {
+  .entry-toggle-group { width: 100%; }
+  .entry-toggle-group > button:first-child { flex: 1; }
+  .entry-toggle-wrap { flex: 1; }
+  .entry-toggle-wrap > button:first-child { flex: 1; }
+  .help-table th, .help-table td { padding: 10px 11px; font-size: 10.5px; }
+}
