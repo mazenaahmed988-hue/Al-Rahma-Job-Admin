@@ -5,19 +5,17 @@ export const dynamic = 'force-dynamic';
 
 export default async function FilesPage() {
   const admin = getAdminClient();
-  const [employees, categories, files] = await Promise.all([
-    admin.from('employees').select('id, full_name, national_id, job_title').order('full_name'),
-    admin.from('payslip_categories').select('*').order('sort_order').order('name'),
+  const [employees, files] = await Promise.all([
+    admin.from('employees').select('id, full_name, national_id').order('full_name'),
     admin
       .from('payslips')
-      .select('id, employee_id, category, year, month, month_label, file_name, mime_type, storage_path, status, is_visible, created_at, employees(id, full_name, national_id)')
+      .select('id, employee_id, year, month, month_label, local_path, status, created_at, employees(id, full_name, national_id)')
       .order('created_at', { ascending: false }),
   ]);
 
   return (
     <FilesView
       employees={employees.data ?? []}
-      categories={categories.data ?? []}
       initialFiles={files.data ?? []}
     />
   );
