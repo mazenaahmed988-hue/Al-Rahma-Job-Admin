@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, isAdmin } from '@/lib/supabase/server';
-import { getAdminClient, hasContactColumns, isMissingContactColumn } from '@/lib/supabase/admin';
+import { getAdminClient } from '@/lib/supabase/admin';
 
 const NID = /^[0-9]{14}$/;
 
@@ -28,12 +28,8 @@ export async function PATCH(request, { params }) {
   }
   if (patch.job_title !== undefined) {
     const title = String(patch.job_title).trim();
-    if (title.length < 2) return NextResponse.json({ error: 'الوظيفة مطلوبة' }, { status: 400 });
-    update.job_title = title;
+    if (title) update.job_title = title;
   }
-  const withContacts = await hasContactColumns();
-  if (patch.phone !== undefined && withContacts) update.phone = String(patch.phone).trim() || null;
-  if (patch.address !== undefined && withContacts) update.address = String(patch.address).trim() || null;
   if (patch.is_active !== undefined) update.is_active = Boolean(patch.is_active);
 
   if (Object.keys(update).length === 0) return NextResponse.json({ error: 'مفيش بيانات للتعديل' }, { status: 400 });
@@ -41,9 +37,6 @@ export async function PATCH(request, { params }) {
   const admin = getAdminClient();
   const { data, error } = await admin.from('employees').update(update).eq('id', id).select().single();
   if (error) {
-    if (isMissingContactColumn(error)) {
-      return NextResponse.json({ error: 'ترحيل قاعدة البيانات لسه مش متنفذ. شغّل supabase/migrations/0002_employee_contacts_and_avatars.sql' }, { status: 503 });
-    }
     const duplicate = error.code === '23505';
     return NextResponse.json({ error: duplicate ? 'الرقم القومي ده مسجل قبل كده' : error.message }, { status: 400 });
   }

@@ -20,7 +20,7 @@ function EmployeeAvatar({ employee, signedUrl }) {
   return <span className="emp-avatar" aria-hidden="true">{letters ? letters : <UserRoundX size={20} />}</span>;
 }
 
-export default function EmployeesView({ initialEmployees, contactColumns = true }) {
+export default function EmployeesView({ initialEmployees }) {
   const [employees, setEmployees] = useState(initialEmployees ?? []);
   const [avatars, setAvatars] = useState({});
   const [query, setQuery] = useState('');
@@ -130,14 +130,11 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
 
   // تصدير البيانات CSV مع BOM عشان العربي يفتح صح في Excel
   function exportData() {
-    const headers = ['الاسم', 'الرقم القومي', 'الوظيفة', 'التليفون', 'العنوان', 'الحالة'];
+    const headers = ['الاسم', 'الرقم القومي', 'الحالة'];
     const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const lines = filtered.map((employee) => [
       employee.full_name,
       employee.national_id,
-      employee.job_title,
-      employee.phone,
-      employee.address,
       employee.is_active ? 'نشط' : 'موقوف',
     ].map(escapeCell).join(','));
     const csv = `\uFEFF${[headers.map(escapeCell).join(','), ...lines].join('\r\n')}`;
@@ -201,9 +198,6 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
                 <tr>
                   <th>الموظف</th>
                   <th>الرقم القومي</th>
-                  <th>الوظيفة</th>
-                  <th>التليفون</th>
-                  <th>العنوان</th>
                   <th>الحالة</th>
                   <th><span className="sr-only">إجراءات</span></th>
                 </tr>
@@ -216,14 +210,10 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
                         <EmployeeAvatar employee={employee} signedUrl={avatars[employee.id]} />
                         <div>
                           <strong>{employee.full_name}</strong>
-                          {employee.address && <small><MapPinIcon />{employee.address}</small>}
                         </div>
                       </div>
                     </td>
                     <td data-label="الرقم القومي"><span className="mono">{employee.national_id}</span></td>
-                    <td data-label="الوظيفة">{employee.job_title}</td>
-                    <td data-label="التليفون">{employee.phone ? <span className="mono" dir="ltr">{employee.phone}</span> : <span className="muted-cell">—</span>}</td>
-                    <td data-label="العنوان">{employee.address || <span className="muted-cell">—</span>}</td>
                     <td data-label="الحالة">
                       <label className="switch">
                         <input type="checkbox" checked={employee.is_active} onChange={() => toggleStatus(employee)} disabled={togglingId === employee.id} aria-label={`حالة ${employee.full_name}`} />
@@ -254,7 +244,6 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
                   <EmployeeAvatar employee={employee} signedUrl={avatars[employee.id]} />
                   <div>
                     <strong>{employee.full_name}</strong>
-                    <span>{employee.job_title}</span>
                   </div>
                   <div className="emp-card-actions">
                     <button type="button" className="icon-button" onClick={() => { setEditing(employee); setFormOpen(true); }} aria-label={`تعديل ${employee.full_name}`}><Pencil size={16} /></button>
@@ -265,8 +254,6 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
                 </div>
                 <dl className="emp-card-meta">
                   <div><dt>الرقم القومي</dt><dd className="mono">{employee.national_id}</dd></div>
-                  <div><dt>التليفون</dt><dd className="mono" dir="ltr">{employee.phone || '—'}</dd></div>
-                  <div><dt>العنوان</dt><dd>{employee.address || '—'}</dd></div>
                 </dl>
                 <div className="emp-card-foot">
                   <label className="switch">
@@ -282,7 +269,7 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
       )}
 
       <AnimatePresence>
-        {formOpen && <EmployeeForm employee={editing} contactColumns={contactColumns} onClose={() => { setFormOpen(false); setEditing(null); }} onSaved={handleSaved} />}
+        {formOpen && <EmployeeForm employee={editing} onClose={() => { setFormOpen(false); setEditing(null); }} onSaved={handleSaved} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -297,10 +284,6 @@ export default function EmployeesView({ initialEmployees, contactColumns = true 
           />
         )}
       </AnimatePresence>
-    </section>
-  );
-}
-
-function MapPinIcon() {
-  return <span className="pin-dot" aria-hidden="true" />;
-}
+        </section>
+      );
+    }

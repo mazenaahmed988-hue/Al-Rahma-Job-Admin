@@ -2,26 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check, Loader2, MapPin, Phone, UserPlus, X } from 'lucide-react';
+import { Camera, Check, Loader2, UserPlus, X } from 'lucide-react';
 
-const EMPTY = { full_name: '', national_id: '', job_title: '', phone: '', address: '' };
+const EMPTY = { full_name: '', national_id: '' };
 const FIELDS = [
   { name: 'full_name', label: 'الاسم بالكامل', placeholder: 'مثال: أحمد محمد علي', minLength: 3, autoComplete: 'name' },
   { name: 'national_id', label: 'الرقم القومي', placeholder: '14 رقم', inputMode: 'numeric', maxLength: 14 },
-  { name: 'job_title', label: 'الوظيفة', placeholder: 'مثال: محاسب أول', minLength: 2 },
-  { name: 'phone', label: 'رقم التليفون', placeholder: '01xxxxxxxxx', inputMode: 'tel', dir: 'ltr', contact: true },
-  { name: 'address', label: 'العنوان', placeholder: 'المدينة - الشارع', contact: true },
 ];
 
 function validate(values) {
   const errors = {};
   if (values.full_name.trim().length < 3) errors.full_name = 'الاسم لازم يكون 3 حروف على الأقل';
   if (!/^[0-9]{14}$/.test(values.national_id)) errors.national_id = 'لازم يكون 14 رقم';
-  if (values.job_title.trim().length < 2) errors.job_title = 'اكتب وظيفة الموظف';
   return errors;
 }
 
-export default function EmployeeForm({ employee, onClose, onSaved, contactColumns = true }) {
+export default function EmployeeForm({ employee, onClose, onSaved }) {
   const isEdit = Boolean(employee);
   const [values, setValues] = useState(EMPTY);  const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState('');
@@ -37,16 +33,13 @@ export default function EmployeeForm({ employee, onClose, onSaved, contactColumn
       setValues({
         full_name: employee.full_name ?? '',
         national_id: employee.national_id ?? '',
-        job_title: employee.job_title ?? '',
-        phone: employee.phone ?? '',
-        address: employee.address ?? '',
       });
     }
     return () => { if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
   }, [employee]);
 
   function update(name, value) {
-    const next = name === 'national_id' || name === 'phone' ? value.replace(/[^\d+]/g, '') : value;
+    const next = name === 'national_id' ? value.replace(/[^\d]/g, '') : value;
     setValues((prev) => ({ ...prev, [name]: next }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: undefined }));
   }
@@ -150,12 +143,10 @@ export default function EmployeeForm({ employee, onClose, onSaved, contactColumn
           </div>
 
           <div className="emp-grid">
-            {FIELDS.filter((field) => contactColumns || !field.contact).map((field) => (
-              <div key={field.name} className={`emp-field ${field.name === 'address' ? 'span-all' : ''}`}>
+            {FIELDS.map((field) => (
+              <div key={field.name} className="emp-field">
                 <label htmlFor={`emp-${field.name}`}>{field.label}</label>
                 <div className={`emp-input ${errors[field.name] ? 'has-error' : ''}`}>
-                  {field.name === 'phone' && <Phone size={17} />}
-                  {field.name === 'address' && <MapPin size={17} />}
                   <input
                     id={`emp-${field.name}`}
                     inputMode={field.inputMode}
@@ -174,7 +165,6 @@ export default function EmployeeForm({ employee, onClose, onSaved, contactColumn
           </div>
 
           {formError && <p className="emp-form-error" role="alert">{formError}</p>}
-          {!contactColumns && <p className="emp-form-hint">التليفون والعنوان هيتسجلوا بعد ما يتم تشغيل ترحيل قاعدة البيانات.</p>}
 
           <div className="emp-form-actions">
             <button type="button" className="ghost-button" onClick={onClose} disabled={saving}>إلغاء</button>
