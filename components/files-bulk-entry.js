@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ClipboardPaste, FolderOpen, HelpCircle, Table2, X } from 'lucide-react';
-import { MONTHS, CURRENT_YEAR, checkPath, parseMonthValue, parseYearValue } from '@/lib/files';
+import { MONTHS, CURRENT_YEAR, checkPath, cleanPath, parseMonthValue, parseYearValue } from '@/lib/files';
 import BulkLivePreview from '@/components/ui/bulk-live-preview';
 
 /**
@@ -22,7 +22,7 @@ export default function FilesBulkEntry({ employees, onSubmit, busy, onOpenHelp }
   async function pasteFromClipboard() {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setBulkText(text);
+      if (text) setBulkText(text.replace(/["']/g, ''));
     } catch {
       /* المتصفح ماحظةش — المستخدم يلصق بإيده */
     }
@@ -45,7 +45,7 @@ export default function FilesBulkEntry({ employees, onSubmit, busy, onOpenHelp }
       if (index === 0 && cells.length > 1 && cells.some((c) => /اسم|مسار|name|path/i.test(c))) return;
 
       const [rawName, rawMonth, rawYear, rawPath] = cells;
-      const path = (rawPath ?? '').replace(/^["']|["']$/g, '').trim();
+      const path = cleanPath(rawPath);
 
       if (!rawName || !path) {
         problems.push(`سطر ${index + 1}: ناقص`);
@@ -105,7 +105,11 @@ export default function FilesBulkEntry({ employees, onSubmit, busy, onOpenHelp }
           <textarea
             id="bulk-text"
             value={bulkText}
-            onChange={(e) => setBulkText(e.target.value)}
+            onChange={(e) => setBulkText(e.target.value.replace(/["']/g, ''))}
+            onPaste={(e) => {
+              e.preventDefault();
+              setBulkText(e.clipboardData.getData('text').replace(/["']/g, ''));
+            }}
             placeholder={'29001011501234\t3\t2026\tK:\\1.pdf\n29666777889999\t4\t2026\tK:\\2.pdf'}
             rows={7}
             dir="ltr"

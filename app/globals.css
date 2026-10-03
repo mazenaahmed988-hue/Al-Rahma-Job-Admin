@@ -358,15 +358,19 @@ button:disabled { opacity:.65; cursor:wait; }
 @media (prefers-reduced-motion:reduce) { *,*:before,*:after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; } }
 
 /* ─── إدارة ملفات: حذف مجمع + استبدال + فلترة ────────────────────────────── */
+.files-managed-heading { margin-top: 24px; margin-bottom: 10px; }
+.files-managed-heading h2 { margin-top: 0; }
+.files-managed-heading .heading-actions .ghost-button { height: 38px; }
 .bulk-delete-button { display:flex; align-items:center; gap:8px; height:42px; padding:0 16px; border:0; border-radius:12px; color:#fff; background:linear-gradient(100deg,#c0392b,#a52f22); font-size:12.5px; font-weight:800; box-shadow:0 9px 20px rgba(165,47,34,.22); transition:transform .2s,box-shadow .2s; }
 .bulk-delete-button:hover { transform:translateY(-2px); box-shadow:0 13px 24px rgba(165,47,34,.28); }
 
-.files-filters { display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px; padding:16px 18px; margin-bottom:16px; border-radius:16px; }
-.files-filters .filter-field { display:flex; flex-direction:column; gap:7px; min-width:170px; }
-.files-filters .filter-field label { font-size:11.5px; font-weight:700; color:#2b4a47; }
-.files-filters .filter-field select { height:44px; padding:0 12px; border:1px solid #dfe9e8; background:#f8faf9; border-radius:11px; color:#183747; font-size:12.5px; font-weight:600; outline:0; }
+.files-filters { display:grid; grid-template-columns:minmax(220px,1fr) minmax(125px,155px) minmax(125px,155px) auto; align-items:end; gap:9px; padding:10px 12px; margin-bottom:12px; border-radius:13px; }
+.files-filters .search-box { min-width:0; height:38px; }
+.files-filters .filter-field { display:flex; flex-direction:row; align-items:center; gap:6px; min-width:0; }
+.files-filters .filter-field label { font-size:10px; font-weight:800; color:#2b4a47; white-space:nowrap; }
+.files-filters .filter-field select { height:38px; min-width:0; width:100%; padding:0 9px; border:1px solid #dfe9e8; background:#f8faf9; border-radius:9px; color:#183747; font-size:11px; font-weight:600; outline:0; }
 .files-filters .filter-field select:focus { border-color:#39aa9b; box-shadow:0 0 0 3px rgba(57,170,155,.13); }
-.files-filters .ghost-button { height:44px; }
+.files-filters .ghost-button { height:38px; white-space:nowrap; padding-inline:12px; }
 
 /* عمود الاختيار في جدول الملفات */
 .emp-table .pick-col { width:46px; text-align:center; }
@@ -376,8 +380,13 @@ button:disabled { opacity:.65; cursor:wait; }
 
 /* على الموبايل: صف الاختيار يبقى في الأول بمساحة مريحة */
 @media (max-width:760px) {
-  .files-filters { padding:14px; }
-  .files-filters .filter-field { flex:1 1 140px; min-width:0; }
+  .files-managed-heading { margin-top: 19px; margin-bottom: 8px; gap: 8px; }
+  .files-managed-heading .heading-actions { width:100%; }
+  .files-managed-heading .heading-actions .ghost-button { width:100%; }
+  .files-filters { grid-template-columns:1fr 1fr; padding:9px; gap:7px; }
+  .files-filters .search-box { grid-column:1/-1; }
+  .files-filters .filter-field { min-width:0; }
+  .files-filters > .ghost-button { grid-column:1/-1; width:100%; }
   .bulk-delete-button { width:100%; justify-content:center; }
   .emp-table .pick-col { text-align:right; }
 }

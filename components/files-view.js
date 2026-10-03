@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { createBrowserClient } from '@supabase/ssr';
+
+const realtimeClient = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+);
 import {
   CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, FolderOpen, Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
 } from 'lucide-react';
@@ -30,6 +36,27 @@ export default function FilesView({ employees, initialFiles }) {
   useEffect(() => {
     setFiles(initialFiles ?? []);
   }, [initialFiles]);
+
+  // تحديث سجل الملفات فوراً عند أي تغيير من البرنامج المحلي أو لوحة أخرى.
+  useEffect(() => {
+    const channel = realtimeClient
+      .channel('admin-files-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payslips' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          setFiles((prev) => prev.filter((file) => file.id !== payload.old?.id));
+          return;
+        }
+        const next = payload.new;
+        if (!next?.id) return;
+        setFiles((prev) => {
+          const exists = prev.some((file) => file.id === next.id);
+          return exists ? prev.map((file) => (file.id === next.id ? { ...file, ...next } : file)) : [next, ...prev];
+        });
+      })
+      .subscribe();
+
+    return () => { realtimeClient.removeChannel(channel); };
+  }, []);
 
   const linkedFiles = useMemo(() => files.filter((f) => f.local_path), [files]);
 
@@ -281,20 +308,20 @@ export default function FilesView({ employees, initialFiles }) {
 
       {/* 3) جدول إدارة البيانات */}
       <div className="files-managed">
-        <div className="section-heading">
-          <div>
-            <span className="section-kicker">الملفات المسجلة</span>
-            <h2>سجل الملفات</h2>
-            <p>{filtered.length} من {files.length} 파일</p>
-          </div>
-          <div className="heading-actions">
+        <div className="section-heading files-managed-heading">
+        <div>
+          <span className="section-kicker">الملفات المسجلة</span>
+          <h2>سجل الملفات</h2>
+          <p>{filtered.length} من {files.length} ملفات</p>
+        </div>
+        <div className="heading-actions">
             <button type="button" className="ghost-button" onClick={exportCsv} disabled={!filtered.length}>
               <FileSpreadsheet size={16} /> تصدير إلى Excel/CSV
             </button>
           </div>
         </div>
 
-        <div className="filters glass">
+        <div className="filters files-filters glass">
           <div className="search-box">
             <Search size={18} />
             <input

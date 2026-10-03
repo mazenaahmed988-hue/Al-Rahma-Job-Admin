@@ -9,7 +9,7 @@ const DRIVE_PATH = /^[A-Za-z]:[\\/]/;
 const KNOWN_EXT = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.png', '.jpg', '.jpeg', '.webp', '.zip', '.rar'];
 
 function checkLocalPath(raw) {
-  const value = String(raw ?? '').trim();
+  const value = String(raw ?? '').replace(/["']/g, '').trim();
   if (!value) return { ok: false, value, message: 'المسار فاضي' };
   if (!DRIVE_PATH.test(value)) return { ok: false, value, message: 'المسار لازم يبدأ بحرف قرص مثل C:\\ أو K:' };
   if (!KNOWN_EXT.some((ext) => value.toLowerCase().endsWith(ext))) {
@@ -47,6 +47,19 @@ async function resolveCategory(admin, requested) {
   if (wanted) return wanted;
   const { data } = await admin.from('payslip_categories').select('name').order('id').limit(1);
   return data?.[0]?.name ?? 'عام';
+}
+
+async function enqueueFileRequest(admin, payslip) {
+  const { error } = await admin.from('file_requests').insert({
+    employee_id: payslip.employee_id,
+    payslip_id: payslip.id,
+    local_path: payslip.local_path,
+    year: payslip.year,
+    month: payslip.month,
+    category: payslip.category,
+    status: 'pending',
+  });
+  return error;
 }
 
 export async function GET() {
@@ -102,6 +115,13 @@ export async function POST(request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const requestError = await enqueueFileRequest(admin, payslip);
+  if (requestError) {
+    await admin.from('payslips').delete().eq('id', payslip.id);
+    return NextResponse.json({ error: `فشل إنشاء طلب الرفع: ${requestError.message}` }, { status: 500 });
+  }
+
   return NextResponse.json({ payslip, employee: employee.data }, { status: 201 });
 }
 
@@ -152,6 +172,21 @@ export async function PUT(request) {
     const { data, error } = await admin.from('payslips').insert(records).select(FILE_COLUMNS);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     saved = data ?? [];
+
+    const requests = saved.map((payslip) => ({
+      employee_id: payslip.employee_id,
+      payslip_id: payslip.id,
+      local_path: payslip.local_path,
+      year: payslip.year,
+      month: payslip.month,
+      category: payslip.category,
+      status: 'pending',
+    }));
+    const { error: requestError } = await admin.from('file_requests').insert(requests);
+    if (requestError) {
+      await admin.from('payslips').delete().in('id', saved.map((item) => item.id));
+      return NextResponse.json({ error: `فشل إنشاء طلبات الرفع: ${requestError.message}` }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ saved: saved.length, files: saved, problems });
@@ -188,8 +223,15 @@ export async function PATCH(request) {
   }
 
   if (!Object.keys(update).length) return NextResponse.json({ error: 'مفيش بيانات للتعديل' }, { status: 400 });
-  const { data, error } = await getAdminClient().from('payslips').update(update).eq('id', id).select(FILE_COLUMNS).single();
+  const admin = getAdminClient();
+  const { data, error } = await admin.from('payslips').update(update).eq('id', id).select(FILE_COLUMNS).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  if (localPath !== undefined) {
+    const { error: requestError } = await enqueueFileRequest(admin, data);
+    if (requestError) return NextResponse.json({ error: `فشل إنشاء طلب الرفع: ${requestError.message}` }, { status: 500 });
+  }
+
   return NextResponse.json({ file: data });
 }
 

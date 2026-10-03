@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle, CheckCircle2, ClipboardPaste, FolderOpen, Search, X,
 } from 'lucide-react';
-import { MONTHS, YEARS, checkPath, detectKind, initials } from '@/lib/files';
+import { MONTHS, YEARS, checkPath, cleanPath, detectKind, initials } from '@/lib/files';
 import KindIcon from '@/components/ui/kind-icon';
 
 /**
@@ -56,7 +56,7 @@ export default function FilesSingleEntry({ employees, onSubmit, busy, notice }) 
     try {
       const text = await navigator.clipboard.readText();
       if (!text) return;
-      setField('path', text.trim().split(/\r?\n/)[0]);
+      setField('path', cleanPath(text.split(/\r?\n/)[0]));
     } catch {
       /* المتصفح مسمحش بالقراءة — المستخدم يلصق بإيده */
     }
@@ -65,7 +65,7 @@ export default function FilesSingleEntry({ employees, onSubmit, busy, notice }) 
   function submit() {
     onSubmit({
       employeeId: entry.employeeId,
-      localPath: entry.path.trim(),
+      localPath: cleanPath(entry.path),
       month: entry.month,
       year: entry.year,
     });
@@ -184,7 +184,12 @@ export default function FilesSingleEntry({ employees, onSubmit, busy, notice }) 
           <input
             id="entry-path"
             value={entry.path}
-            onChange={(e) => setField('path', e.target.value)}
+            onChange={(e) => setField('path', cleanPath(e.target.value))}
+            onPaste={(e) => {
+              e.preventDefault();
+              const pasted = e.clipboardData.getData('text').split(/\r?\n/)[0];
+              setField('path', cleanPath(pasted));
+            }}
             placeholder="K:\files\salary.pdf"
             dir="ltr"
             aria-label="مسار الملف المحلي"
