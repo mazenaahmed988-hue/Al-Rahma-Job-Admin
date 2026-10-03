@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  CheckCircle2, FileSpreadsheet, FolderOpen, Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
+  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, FolderOpen, Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
 } from 'lucide-react';
 import { MONTHS, detectKind, initials } from '@/lib/files';
 import StatCard from '@/components/ui/stat-card';
@@ -124,6 +124,8 @@ export default function FilesView({ employees, initialFiles }) {
         body: JSON.stringify({
           id: editing.id,
           local_path: editing.local_path,
+          file_name: editing.file_name,
+          category: editing.category,
           month: editing.month,
           year: editing.year,
         }),
@@ -139,6 +141,22 @@ export default function FilesView({ employees, initialFiles }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function toggleVisibility(item) {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/files', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, is_visible: !item.is_visible }) });
+      const payload = await res.json();
+      if (!res.ok) return handleError(payload);
+      setFiles((prev) => prev.map((file) => file.id === item.id ? payload.file : file));
+      flash('ok', payload.file.is_visible ? 'الملف بقى ظاهر للموظف' : 'الملف اختفى من بوابة الموظف');
+    } catch { flash('error', 'مفيش اتصال بالسيرفر'); } finally { setBusy(false); }
+  }
+
+  function downloadFile(item) {
+    if (!item.storage_path) return flash('warn', 'الملف لسه مرفوعش على السحابة');
+    window.open(`/api/files/download?id=${encodeURIComponent(item.id)}`, '_blank', 'noopener,noreferrer');
   }
 
   async function doDelete() {
@@ -352,8 +370,11 @@ export default function FilesView({ employees, initialFiles }) {
                           </div>
                         </div>
                       </td>
+                      <td data-label="الاسم والقسم">
+                        {editing?.id === item.id ? <div className="inline-fields"><input value={editing.file_name ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, file_name: e.target.value }))} placeholder="اسم الملف" /><input value={editing.category ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, category: e.target.value }))} placeholder="القسم" /></div> : <div><strong>{item.file_name || item.category || '—'}</strong><small className="muted-cell">{item.category || 'عام'}</small></div>}
+                      </td>
                       <td data-label="الشهر/السنة">
-                        <span className="mono">{item.month_label} {item.year}</span>
+                        {editing?.id === item.id ? <div className="inline-fields inline-fields--period"><select value={editing.month ?? 1} onChange={(e) => setEditing((prev) => ({ ...prev, month: Number(e.target.value), month_label: MONTHS[Number(e.target.value) - 1] }))}>{MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select><input type="number" min="2000" max="2100" value={editing.year ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, year: Number(e.target.value) }))} /></div> : <span className="mono">{item.month_label} {item.year}</span>}
                       </td>
                       <td data-label="مسار الملف">
                         <span className="path-cell">
@@ -371,24 +392,9 @@ export default function FilesView({ employees, initialFiles }) {
                       </td>
                       <td className="actions-cell">
                         <div className="row-actions">
-                          <button
-                            type="button"
-                            className="icon-button"
-                            onClick={() => flash('warn', 'فتح الملف المحلي — متاح بعد ربط الخادم')}
-                            aria-label="فتح مسار الملف"
-                            title="فتح مسار الملف"
-                          >
-                            <FolderOpen size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            onClick={() => setEditing(item)}
-                            aria-label="تعديل السجل"
-                            title="تعديل"
-                          >
-                            <Pencil size={16} />
-                          </button>
+                          <button type="button" className="icon-button icon-button--download" onClick={() => downloadFile(item)} aria-label="تحميل الملف" title="تحميل"><Download size={16} /></button>
+                          <button type="button" className="icon-button" onClick={() => toggleVisibility(item)} disabled={busy} aria-label={item.is_visible ? 'إخفاء الملف' : 'إظهار الملف'} title={item.is_visible ? 'إخفاء' : 'إظهار'}>{item.is_visible ? <Eye size={16} /> : <EyeOff size={16} />}</button>
+                          {editing?.id === item.id ? <><button type="button" className="icon-button icon-button--success" onClick={saveEdit} disabled={busy} aria-label="حفظ التعديل" title="حفظ"><CheckCircle2 size={16} /></button><button type="button" className="icon-button" onClick={() => setEditing(null)} disabled={busy} aria-label="إلغاء التعديل" title="إلغاء"><X size={16} /></button></> : <button type="button" className="icon-button" onClick={() => setEditing({ ...item })} aria-label="تعديل السجل" title="تعديل"><Pencil size={16} /></button>}
                           <button
                             type="button"
                             className="icon-button icon-button--danger"
@@ -411,7 +417,7 @@ export default function FilesView({ employees, initialFiles }) {
 
       {/* مودال التعديل */}
       <GlassModal
-        open={Boolean(editing)}
+        open={false}
         onClose={() => setEditing(null)}
         kicker="تعديل السجل"
         title={editing?.employees?.full_name ?? ''}

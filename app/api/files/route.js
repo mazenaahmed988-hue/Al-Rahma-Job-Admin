@@ -162,7 +162,7 @@ export async function PATCH(request) {
   const result = await supabase.auth.getUser();
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
 
-  const { id, is_visible: isVisible, status, local_path: localPath, month, year } = await request.json();
+  const { id, is_visible: isVisible, status, local_path: localPath, file_name: fileName, category, month, year } = await request.json();
   if (!id) return NextResponse.json({ error: 'مفيش معرف ملف' }, { status: 400 });
 
   const update = {};
@@ -173,6 +173,8 @@ export async function PATCH(request) {
     if (!pathCheck.ok) return NextResponse.json({ error: pathCheck.message }, { status: 400 });
     update.local_path = pathCheck.value;
   }
+  if (fileName !== undefined) update.file_name = String(fileName).trim() || null;
+  if (category !== undefined) update.category = String(category).trim() || 'عام';
   if (month !== undefined) {
     const m = parseMonth(month);
     if (!m) return NextResponse.json({ error: 'الشهر غير صحيح' }, { status: 400 });

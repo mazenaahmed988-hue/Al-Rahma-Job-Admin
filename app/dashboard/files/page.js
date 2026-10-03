@@ -9,7 +9,7 @@ export default async function FilesPage() {
     admin.from('employees').select('id, full_name, national_id').order('full_name'),
     admin
       .from('payslips')
-      .select('id, employee_id, category, year, month, month_label, local_path, status, created_at, employees(id, full_name, national_id)')
+      .select('id, employee_id, category, year, month, month_label, local_path, file_name, mime_type, storage_path, status, is_visible, created_at, employees(id, full_name, national_id)')
       .order('created_at', { ascending: false }),
   ]);
 
