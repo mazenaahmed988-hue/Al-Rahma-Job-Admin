@@ -41,13 +41,8 @@ function parseYear(raw) {
 
 const FILE_COLUMNS = 'id, employee_id, category, year, month, month_label, local_path, file_name, mime_type, storage_path, status, is_visible, created_at, employees(id, full_name, national_id)';
 
-// عمود category في الداتابيز NOT NULL — لو المستخدم مش محددش قسم، بنستخدم أول قسم متاح
-async function resolveCategory(admin, requested) {
-  const wanted = String(requested ?? '').trim();
-  if (wanted) return wanted;
-  const { data } = await admin.from('payslip_categories').select('name').order('id').limit(1);
-  return data?.[0]?.name ?? 'عام';
-}
+// القسم بقى ثابت في الداتابيز بالقيمة دي (الأقسام بقت Hardcoded)
+const FIXED_CATEGORY = 'شيت القبض';
 
 async function enqueueFileRequest(admin, payslip) {
   const { error } = await admin.from('file_requests').insert({
@@ -87,7 +82,6 @@ export async function POST(request) {
   const year = parseYear(form.get('year'));
   const category = String(form.get('category') ?? '').trim();
   const isVisible = String(form.get('isVisible') ?? 'true') === 'true';
-
   if (!employeeId) return NextResponse.json({ error: 'اختار الموظف الأول' }, { status: 400 });
 
   const pathCheck = checkLocalPath(localPath);
@@ -109,7 +103,7 @@ export async function POST(request) {
       month_label: toMonthLabel(month),
       status: 'pending',
       is_visible: isVisible,
-      category: await resolveCategory(admin, category),
+      category: FIXED_CATEGORY,
     })
     .select(FILE_COLUMNS)
     .single();
@@ -142,7 +136,6 @@ export async function PUT(request) {
 
   const records = [];
   const problems = [];
-  const fallbackCategory = await resolveCategory(admin, '');
 
   rows.forEach((row, index) => {
     const employeeId = String(row.employeeId ?? '');
@@ -163,7 +156,7 @@ export async function PUT(request) {
       month_label: toMonthLabel(month),
       status: 'pending',
       is_visible: true,
-      category: String(row.category ?? '').trim() || fallbackCategory,
+      category: FIXED_CATEGORY,
     });
   });
 
@@ -237,7 +230,7 @@ export async function PATCH(request) {
     update.local_path = pathCheck.value;
   }
   if (fileName !== undefined) update.file_name = String(fileName).trim() || null;
-  if (category !== undefined) update.category = String(category).trim() || 'عام';
+  if (category !== undefined) update.category = FIXED_CATEGORY;
   if (month !== undefined) {
     const m = parseMonth(month);
     if (!m) return NextResponse.json({ error: 'الشهر غير صحيح' }, { status: 400 });

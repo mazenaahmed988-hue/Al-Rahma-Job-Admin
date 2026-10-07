@@ -53,16 +53,12 @@ export async function DELETE(_request, { params }) {
 
   const admin = getAdminClient();
 
-  const { data: employee } = await admin.from('employees').select('avatar_url').eq('id', id).maybeSingle();
   const { error: filesError } = await admin.from('payslips').delete().eq('employee_id', id);
   if (filesError) return NextResponse.json({ error: `تعذر حذف ملفات الموظف المرتبطة: ${filesError.message}` }, { status: 400 });
   const { error: messagesError } = await admin.from('messages').update({ employee_id: null }).eq('employee_id', id);
   if (messagesError) return NextResponse.json({ error: `تعذر فصل رسائل الموظف: ${messagesError.message}` }, { status: 400 });
   const { error } = await admin.from('employees').delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-  // نمسح صورة الموظف من الـ storage بعد نجاح الحذف
-  if (employee?.avatar_url) await admin.storage.from('avatars').remove([employee.avatar_url]);
 
   return NextResponse.json({ deleted: id });
 }

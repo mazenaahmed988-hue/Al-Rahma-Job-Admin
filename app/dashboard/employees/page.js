@@ -9,8 +9,8 @@ export default async function EmployeesPage() {
   // الصفحة بتقرأ من قاعدة البيانات مباشرة، فلازم تتخليش من أي كاش
   await connection();
   const admin = getAdminClient();
-  // العرض بيعرض الاسم والرقم القومي والحالة فقط، فمش محتاجين أعمدة الوظيفة والتليفون والعنوان
-  const columns = ['id', 'full_name', 'national_id', 'avatar_url', 'is_active', 'created_at', 'department_id'];
+  // العرض بيعرض الاسم والرقم القومي والحالة فقط، والصور اتشالت خلاص
+  const columns = ['id', 'full_name', 'national_id', 'is_active', 'created_at', 'department_id'];
   const { data } = await admin
     .from('employees')
     .select(columns.join(', '))

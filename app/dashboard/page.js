@@ -7,10 +7,9 @@ const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي�
 
 export default async function DashboardPage() {
   const admin = getAdminClient();
-  const [employees, files, categories, unread] = await Promise.all([
+  const [employees, files, unread] = await Promise.all([
     admin.from('employees').select('id, is_active'),
     admin.from('payslips').select('id, employee_id, created_at'),
-    admin.from('payslip_categories').select('id'),
     admin.from('messages').select('id', { count: 'exact', head: true }).eq('is_read', false),
   ]);
 
@@ -50,7 +49,6 @@ export default async function DashboardPage() {
     active: activeCount,
     inactive: rows.length - activeCount,
     files: (files.data ?? []).length,
-    categories: (categories.data ?? []).length,
     unread: unread.count ?? 0,
     monthly,
     completion,

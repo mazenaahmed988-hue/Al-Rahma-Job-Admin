@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check, Loader2, UserPlus, X } from 'lucide-react';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, Loader2, UserPlus, X } from 'lucide-react';
 
 const EMPTY = { full_name: '', national_id: '' };
 const FIELDS = [
@@ -19,58 +19,15 @@ function validate(values) {
 
 export default function EmployeeForm({ employee, onClose, onSaved }) {
   const isEdit = Boolean(employee);
-  const [values, setValues] = useState(EMPTY);  const [errors, setErrors] = useState({});
+  const [values, setValues] = useState(() => employee ? { full_name: employee.full_name ?? '', national_id: employee.national_id ?? '' } : EMPTY);
+  const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState(null);
-  const [avatarError, setAvatarError] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const fileInput = useRef(null);
-  const objectUrl = useRef(null);
-
-  useEffect(() => {
-    if (employee) {
-      setValues({
-        full_name: employee.full_name ?? '',
-        national_id: employee.national_id ?? '',
-      });
-    }
-    return () => { if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
-  }, [employee]);
 
   function update(name, value) {
     const next = name === 'national_id' ? value.replace(/[^\d]/g, '') : value;
     setValues((prev) => ({ ...prev, [name]: next }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: undefined }));
-  }
-
-  async function pickAvatar(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setAvatarError('');
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return setAvatarError('الصورة لازم تكون JPG أو PNG أو WEBP');
-    if (file.size > 4 * 1024 * 1024) return setAvatarError('حجم الصورة أكبر من 4 ميجا');
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    objectUrl.current = URL.createObjectURL(file);
-    setAvatarPreview(objectUrl.current);
-
-    if (!employee) return;
-    setUploading(true);
-    const form = new FormData();
-    form.append('file', file);
-    form.append('employeeId', employee.id);
-    try {
-      const response = await fetch(`/api/employees/${employee.id}/avatar`, { method: 'POST', body: form });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'رفع الصورة فشل');
-      onSaved?.({ type: 'avatar', employee: { ...employee, avatar_url: payload.storagePath }, avatarUrl: payload.avatarUrl });
-    } catch (error) {
-      setAvatarError(error.message);
-      setAvatarPreview(null);
-    } finally {
-      setUploading(false);
-    }
   }
 
   async function submit(event) {
@@ -98,9 +55,6 @@ export default function EmployeeForm({ employee, onClose, onSaved }) {
     }
   }
 
-  const currentAvatar = avatarPreview ?? employee?.avatarUrl ?? null;
-  const initials = values.full_name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('');
-
   return (
     <motion.div className="modal-backdrop modal-backdrop--center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .22 }} onClick={onClose}>
       <motion.div
@@ -123,25 +77,6 @@ export default function EmployeeForm({ employee, onClose, onSaved }) {
         </header>
 
         <form onSubmit={submit} className="emp-form">
-          <div className="avatar-editor">
-            <div className="avatar-circle" aria-hidden="true">
-              {currentAvatar
-                ? <img src={currentAvatar} alt="" />
-                : initials
-                  ? <span className="avatar-initials">{initials}</span>
-                  : <span className="avatar-blank" />}
-              {uploading && <span className="avatar-overlay"><Loader2 size={19} className="spin" /></span>}
-            </div>
-            <div className="avatar-actions">
-              <button type="button" className="avatar-button" onClick={() => fileInput.current?.click()} disabled={uploading}>
-                <Camera size={17} /> {uploading ? 'جاري الرفع...' : isEdit ? 'تغيير الصورة' : 'رفع صورة'}
-              </button>
-              {avatarError && <span className="avatar-error">{avatarError}</span>}
-              {!isEdit && <span className="avatar-hint">تقدر ترفع الصورة بعد الحفظ</span>}
-            </div>
-            <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={pickAvatar} className="sr-only" />
-          </div>
-
           <div className="emp-grid">
             {FIELDS.map((field) => (
               <div key={field.name} className="emp-field">

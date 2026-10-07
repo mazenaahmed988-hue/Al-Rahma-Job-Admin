@@ -36,7 +36,7 @@ export async function GET() {
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
 
   const admin = getAdminClient();
-  const columns = ['id', 'full_name', 'national_id', 'avatar_url', 'is_active', 'created_at', 'department_id'];
+  const columns = ['id', 'full_name', 'national_id', 'is_active', 'created_at', 'department_id'];
   const { data, error } = await admin
     .from('employees')
     .select(columns.join(', '))

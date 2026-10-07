@@ -4,29 +4,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileSpreadsheet, Loader2, Pencil, RefreshCw, Search, Trash2, UserPlus, UserRoundX, UsersRound, X } from 'lucide-react';
 import EmployeeForm from '@/components/employee-form';
+import EmployeesBulkAdd from '@/components/employees-bulk-add';
 import ConfirmDialog from '@/components/confirm-dialog';
 
 function initials(name) {
   return name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('');
 }
 
-function EmployeeAvatar({ employee, signedUrl }) {
-  const [failed, setFailed] = useState(false);
-  const src = signedUrl ?? employee.avatarUrl;
-  if (src && !failed) {
-    return <span className="emp-avatar"><img src={src} alt={`صورة ${employee.full_name}`} onError={() => setFailed(true)} /></span>;
-  }
+// الصور اتشالت بالكامل — بنعرض الحروف الأولى من الاسم بس
+function EmployeeAvatar({ employee }) {
   const letters = initials(employee.full_name);
   return <span className="emp-avatar" aria-hidden="true">{letters ? letters : <UserRoundX size={20} />}</span>;
 }
 
 export default function EmployeesView({ initialEmployees }) {
   const [employees, setEmployees] = useState(initialEmployees ?? []);
-  const [avatars, setAvatars] = useState({});
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [editing, setEditing] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [deleting, setDeleting] = useState(null);
@@ -34,16 +31,6 @@ export default function EmployeesView({ initialEmployees }) {
   const [reloadError, setReloadError] = useState('');
 
   useEffect(() => { setEmployees(initialEmployees ?? []); }, [initialEmployees]);
-
-  // روابط الصور الموقعة بتتحمل من الـ API (الروابط قصيرة العمر)
-  useEffect(() => {
-    let active = true;
-    fetch('/api/employees/avatars')
-      .then((response) => response.json())
-      .then((payload) => { if (active && payload.avatars) setAvatars(payload.avatars); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [employees]);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -57,20 +44,23 @@ export default function EmployeesView({ initialEmployees }) {
 
   const activeCount = employees.filter((employee) => employee.is_active).length;
 
-  function handleSaved({ type, employee, avatarUrl }) {
-    if (type === 'avatar') {
-      setEmployees((prev) => prev.map((item) => (item.id === employee.id ? { ...item, avatar_url: employee.avatar_url } : item)));
-      if (avatarUrl) setAvatars((prev) => ({ ...prev, [employee.id]: avatarUrl }));
-      setNotice({ kind: 'ok', text: 'تم تحديث صورة الموظف' });
-      return;
-    }
+  function handleSaved({ type, employee }) {
     if (type === 'created') {
       setEmployees((prev) => [...prev, employee].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
       setNotice({ kind: 'ok', text: 'تمت إضافة الموظف بنجاح' });
       return;
     }
+    if (type === 'bulk') {
+      setEmployees((prev) => [...prev, ...employee].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
+      return;
+    }
     setEmployees((prev) => prev.map((item) => (item.id === employee.id ? { ...item, ...employee } : item)));
     setNotice({ kind: 'ok', text: 'تم حفظ تعديلات الموظف' });
+  }
+
+  function handleBulkSaved(saved) {
+    setEmployees((prev) => [...prev, ...saved].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
+    setNotice({ kind: 'ok', text: `تمت إضافة ${saved.length} موظف باللصق المجمع` });
   }
 
   async function toggleStatus(employee) {
@@ -97,13 +87,9 @@ export default function EmployeesView({ initialEmployees }) {
     setReloadError('');
     setNotice(null);
     try {
-      const [list, pictures] = await Promise.all([
-        fetch('/api/employees').then((response) => response.json()),
-        fetch('/api/employees/avatars').then((response) => response.json()),
-      ]);
+      const list = await fetch('/api/employees').then((response) => response.json());
       if (list.error) throw new Error(list.error);
       setEmployees(list.employees ?? []);
-      setAvatars(pictures.avatars ?? {});
     } catch (error) {
       setReloadError(error.message);
     }
@@ -119,7 +105,6 @@ export default function EmployeesView({ initialEmployees }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'الحذف فشل');
       setEmployees((prev) => prev.filter((item) => item.id !== target.id));
-      setAvatars((prev) => { const next = { ...prev }; delete next[target.id]; return next; });
       setNotice({ kind: 'ok', text: `تم حذف ${target.full_name}` });
     } catch (error) {
       setNotice({ kind: 'error', text: error.message });
@@ -162,7 +147,7 @@ export default function EmployeesView({ initialEmployees }) {
         <div className="heading-actions">
           <button type="button" className="ghost-button" onClick={reload} aria-label="تحديث البيانات"><RefreshCw size={17} /></button>
           <button type="button" className="ghost-button" onClick={exportData} disabled={!filtered.length}><FileSpreadsheet size={17} /> تصدير البيانات</button>
-          <button type="button" className="primary-button" onClick={() => { setEditing(null); setFormOpen(true); }}><UserPlus size={17} /> موظف جديد</button>
+          <button type="button" className="primary-button" onClick={() => setBulkOpen(true)}><UserPlus size={17} /> إضافة موظفين باللصق</button>
         </div>
       </div>
 
@@ -207,7 +192,7 @@ export default function EmployeesView({ initialEmployees }) {
                   <tr key={employee.id} className={employee.is_active ? '' : 'row-inactive'}>
                     <td data-label="الموظف">
                       <div className="emp-cell">
-                        <EmployeeAvatar employee={employee} signedUrl={avatars[employee.id]} />
+                        <EmployeeAvatar employee={employee} />
                         <div>
                           <strong>{employee.full_name}</strong>
                         </div>
@@ -241,7 +226,7 @@ export default function EmployeesView({ initialEmployees }) {
             {filtered.map((employee) => (
               <motion.article key={employee.id} className={`emp-card glass ${employee.is_active ? '' : 'card-inactive'}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="emp-card-head">
-                  <EmployeeAvatar employee={employee} signedUrl={avatars[employee.id]} />
+                  <EmployeeAvatar employee={employee} />
                   <div>
                     <strong>{employee.full_name}</strong>
                   </div>
@@ -267,6 +252,10 @@ export default function EmployeesView({ initialEmployees }) {
           </div>
         </>
       )}
+
+      <AnimatePresence>
+        {bulkOpen && <EmployeesBulkAdd onClose={() => setBulkOpen(false)} onSaved={handleBulkSaved} />}
+      </AnimatePresence>
 
       <AnimatePresence>
         {formOpen && <EmployeeForm employee={editing} onClose={() => { setFormOpen(false); setEditing(null); }} onSaved={handleSaved} />}

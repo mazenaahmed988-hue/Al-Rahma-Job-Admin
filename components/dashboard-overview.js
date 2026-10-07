@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, Building2, Files, MailOpen, MessageSquareText, ShieldCheck, TrendingUp, UsersRound } from 'lucide-react';
+import { Activity, Files, MailOpen, MessageSquareText, ShieldCheck, TrendingUp, UsersRound } from 'lucide-react';
 
 const CARDS = [
   { key: 'employees', icon: UsersRound, label: 'إجمالي الموظفين', tint: 'mint', href: '/dashboard/employees' },
   { key: 'files', icon: Files, label: 'إجمالي الملفات', tint: 'blue', href: '/dashboard/files' },
-  { key: 'categories', icon: Building2, label: 'إجمالي الأقسام', tint: 'violet', href: '/dashboard/categories' },
   { key: 'unread', icon: MessageSquareText, label: 'رسائل غير مقروءة', tint: 'peach', href: '/dashboard/messages' },
 ];
 
@@ -166,11 +165,10 @@ export default function DashboardOverview({ stats }) {
   const monthly = stats?.monthly ?? [];
   const completion = stats?.completion ?? { served: 0, total: 0 };
   const unread = stats?.unread ?? 0;
-  const values = { employees, files: stats?.files ?? 0, categories: stats?.categories ?? 0, unread };
+  const values = { employees, files: stats?.files ?? 0, unread };
   const notes = {
     employees: employees ? `${active} نشط · ${inactive} موقوف` : 'مفيش موظفين مسجلين بعد',
     files: 'إجمالي الملفات المرفوعة للموظفين',
-    categories: 'أقسام الملفات المتاحة في اللوحة',
     unread: unread ? 'رسائل محتاجة مراجعة' : 'كل الرسائل مقروءة',
   };
 

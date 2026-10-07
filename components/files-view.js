@@ -9,29 +9,25 @@ const realtimeClient = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 );
 import {
-  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, FolderOpen, Link2Off, MoreHorizontal, Pencil, RotateCcw, Search, ScanSearch, Tags, Trash2, UserRound, UserRoundPlus, X,
+  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, Link2Off, MoreHorizontal, Pencil, RotateCcw, Search, Trash2, UserRound, UserRoundPlus, X,
 } from 'lucide-react';
 import { MONTHS, detectKind, initials } from '@/lib/files';
 import StatCard from '@/components/ui/stat-card';
 import KindIcon from '@/components/ui/kind-icon';
 import GlassModal from '@/components/ui/glass-modal';
 import ConfirmDialog from '@/components/confirm-dialog';
-import FilesSingleEntry from '@/components/files-single-entry';
 import SmartPathProcessor from '@/components/smart-path-processor';
 import QuickManagementDrawer from '@/components/quick-management-drawer';
 
-export default function FilesView({ employees: initialEmployees, categories: initialCategories, initialFiles }) {
+export default function FilesView({ employees: initialEmployees, initialFiles }) {
   const [files, setFiles] = useState(initialFiles ?? []);
   const [employees, setEmployees] = useState(initialEmployees ?? []);
-  const [categories, setCategories] = useState(initialCategories ?? []);
   const [drawer, setDrawer] = useState(null);
-  const [mode, setMode] = useState('single');
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
-  const [avatars, setAvatars] = useState({});
   const [retryingId, setRetryingId] = useState(null);
   const [query, setQuery] = useState('');
   const [filterYear, setFilterYear] = useState('all');
@@ -41,14 +37,6 @@ export default function FilesView({ employees: initialEmployees, categories: ini
   useEffect(() => {
     setFiles(initialFiles ?? []);
   }, [initialFiles]);
-
-  useEffect(() => {
-    let active = true;
-    fetch('/api/employees/avatars').then((response) => response.json()).then((payload) => {
-      if (active && payload.avatars) setAvatars(payload.avatars);
-    }).catch(() => {});
-    return () => { active = false; };
-  }, []);
 
   // تحديث سجل الملفات فوراً عند أي تغيير من البرنامج المحلي أو لوحة أخرى.
   useEffect(() => {
@@ -115,30 +103,6 @@ export default function FilesView({ employees: initialEmployees, categories: ini
     flash('error', payload?.error ?? 'حصل خطأ غير متوقع');
   }
 
-  /** تسجيل صف واحد (فردي أو من صف في المعاينة) */
-  async function saveOne(row, options = {}) {
-    setBusy(true);
-    try {
-      const form = new FormData();
-      form.append('employeeId', row.employeeId);
-      form.append('localPath', row.localPath);
-      form.append('month', String(row.month));
-      form.append('year', String(row.year));
-
-      const res = await fetch('/api/files', { method: 'POST', body: form });
-      const payload = await res.json();
-      if (!res.ok) return handleError(payload);
-
-      setFiles((prev) => [payload.payslip, ...prev]);
-      flash('ok', 'تم تسجيل المسار بنجاح');
-      if (options.reset) options.reset();
-    } catch {
-      flash('error', 'مفيش اتصال بالسيرفر');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   /** اعتماد المسارات بعد مراجعة المعاينة الذكية */
   async function saveSmartBatch(rows) {
     setBusy(true);
@@ -165,7 +129,7 @@ export default function FilesView({ employees: initialEmployees, categories: ini
   }
 
   function openDrawer(options = {}) {
-    setDrawer({ tab: options.tab ?? 'employee', ...options });
+    setDrawer({ ...options });
   }
 
   function handleEmployeeCreated(employee) {
@@ -177,19 +141,6 @@ export default function FilesView({ employees: initialEmployees, categories: ini
   function handleEmployeeUpdated(employee) {
     setEmployees((previous) => previous.map((item) => item.id === employee.id ? { ...item, ...employee } : item));
     window.dispatchEvent(new CustomEvent('smart-path-employee-updated', { detail: { employee } }));
-    setDrawer(null);
-  }
-
-  function handleCategoryCreated(category) {
-    setCategories((previous) => [...previous, category].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
-    if (drawer?.rowId) window.dispatchEvent(new CustomEvent('smart-path-category-added', { detail: { rowId: drawer.rowId, category } }));
-    setDrawer(null);
-  }
-
-  function handleCategoryUpdated(category) {
-    const previousName = categories.find((item) => item.id === category.id)?.name;
-    setCategories((previous) => previous.map((item) => item.id === category.id ? category : item).sort((a, b) => a.name.localeCompare(b.name, 'ar')));
-    if (previousName) window.dispatchEvent(new CustomEvent('smart-path-category-renamed', { detail: { previousName, category } }));
     setDrawer(null);
   }
 
@@ -232,9 +183,28 @@ export default function FilesView({ employees: initialEmployees, categories: ini
     } catch { flash('error', 'مفيش اتصال بالسيرفر'); } finally { setBusy(false); }
   }
 
-  function downloadFile(item) {
+  async function downloadFile(item) {
     if (!item.storage_path) return flash('warn', 'الملف لسه مرفوعش على السحابة');
-    window.open(`/api/files/download?id=${encodeURIComponent(item.id)}`, '_blank', 'noopener,noreferrer');
+    try {
+      // بنجيب رابط التحميل الموقّع من الـ API وبعدين بننزّل الملف نفسه كـ Blob (Force Download)
+      const response = await fetch(`/api/files/download?id=${encodeURIComponent(item.id)}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.url) return flash('error', payload?.error || 'مقدرناش نجيب رابط التحميل');
+      const fileResponse = await fetch(payload.url);
+      if (!fileResponse.ok) return flash('error', 'فشل تحميل الملف من السيرفر');
+      const blob = await fileResponse.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = payload.fileName || item.file_name || item.local_path?.split(/[\\/]/).pop() || 'ملف';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+      flash('ok', 'بدأ تحميل الملف');
+    } catch {
+      flash('error', 'مفيش اتصال بالسيرفر');
+    }
   }
 
   function toggleSelected(id) {
@@ -322,21 +292,10 @@ export default function FilesView({ employees: initialEmployees, categories: ini
 
       <div className="master-control-actions">
         <button type="button" className="ghost-button" onClick={() => openDrawer({ tab: 'employee' })}><UserRoundPlus size={17} /> إدارة الموظفين السريعة</button>
-        <button type="button" className="ghost-button" onClick={() => openDrawer({ tab: 'category' })}><Tags size={17} /> إدارة الأقسام</button>
       </div>
 
       <div className="entry-card glass">
-        <div className="entry-toggle" role="group" aria-label="طريقة إدخال الملفات">
-          <button type="button" className={mode === 'single' ? 'is-active' : ''} onClick={() => setMode('single')} aria-pressed={mode === 'single'}><UserRound size={15} /> إدخال فردي</button>
-          <button type="button" className={mode === 'smart' ? 'is-active' : ''} onClick={() => setMode('smart')} aria-pressed={mode === 'smart'}><ScanSearch size={15} /> معالجة ذكية للمسارات</button>
-        </div>
-        <AnimatePresence mode="wait">
-          {mode === 'single' ? (
-            <FilesSingleEntry key="single" employees={employees} onSubmit={saveOne} busy={busy} notice={notice} />
-          ) : (
-            <SmartPathProcessor key="smart" employees={employees} categories={categories} busy={busy} onSubmit={saveSmartBatch} onOpenDrawer={openDrawer} />
-          )}
-        </AnimatePresence>
+        <SmartPathProcessor employees={employees} busy={busy} onSubmit={saveSmartBatch} onOpenDrawer={openDrawer} />
       </div>
       {notice && <motion.p className={`notice notice--${notice.kind}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>{notice.text}</motion.p>}
 
@@ -430,7 +389,7 @@ export default function FilesView({ employees: initialEmployees, categories: ini
                       <td className="pick-col" data-label="تحديد"><input type="checkbox" aria-label={`تحديد ملف ${item.file_name || item.category}`} checked={selectedIds.includes(item.id)} onChange={() => toggleSelected(item.id)} /></td>
                       <td data-label="الموظف">
                         <div className="emp-cell">
-                          <span className="emp-avatar">{avatars[item.employee_id] ? <img src={avatars[item.employee_id]} alt={`صورة ${item.employees?.full_name ?? 'الموظف'}`} /> : initials(item.employees?.full_name)}</span>
+                          <span className="emp-avatar">{initials(item.employees?.full_name)}</span>
                           <div>
                             <strong>{item.employees?.full_name ?? '—'}</strong>
                             <small className="mono">{item.employees?.national_id ?? ''}</small>
@@ -532,16 +491,9 @@ export default function FilesView({ employees: initialEmployees, categories: ini
 
       <QuickManagementDrawer
         open={Boolean(drawer)}
-        initialTab={drawer?.tab ?? 'employee'}
         employees={employees}
-        categories={categories}
-        suggestedName={drawer?.full_name ?? ''}
-        suggestedNationalId={drawer?.national_id ?? ''}
         onClose={() => setDrawer(null)}
         onEmployeeCreated={handleEmployeeCreated}
-        onEmployeeUpdated={handleEmployeeUpdated}
-        onCategoryCreated={handleCategoryCreated}
-        onCategoryUpdated={handleCategoryUpdated}
       />
     </section>
   );
