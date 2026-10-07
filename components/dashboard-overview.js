@@ -87,6 +87,42 @@ function MonthlyChart({ monthly }) {
   );
 }
 
+function CompletionCard({ served, total }) {
+  const percent = total ? Math.round((served / total) * 100) : 0;
+  const circumference = 2 * Math.PI * 52;
+  const dash = (percent / 100) * circumference;
+  return (
+    <div className="chart-card glass completion-card">
+      <div className="chart-head">
+        <div>
+          <span className="section-kicker">الشهر الحالي</span>
+          <h3>معدل الإنجاز الشهري</h3>
+        </div>
+        <span className="chart-badge"><Activity size={15} /> {served} / {total}</span>
+      </div>
+      <div className="donut-wrap">
+        <div className="donut-box">
+          <svg viewBox="0 0 120 120" className="donut" role="img" aria-label={`معدل الإنجاز الشهري ${percent}%`}>
+            <circle cx="60" cy="60" r="52" className="donut-track" />
+            <motion.circle
+              cx="60" cy="60" r="52" className="donut-fill donut-fill--completion"
+              strokeDasharray={`${dash} ${circumference}`}
+              initial={false}
+              animate={{ strokeDashoffset: 0 }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+            />
+          </svg>
+          <div className="donut-center"><strong>{percent}%</strong><span>إنجاز</span></div>
+        </div>
+        <ul className="donut-legend">
+          <li><span className="dot dot-active" /> موظفين اتغطّوا الشهر ده <strong>{served}</strong></li>
+          <li><span className="dot dot-inactive" /> إجمالي الموظفين النشطين <strong>{total}</strong></li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function StatusChart({ active, inactive }) {
   const total = active + inactive;
   const percent = total ? Math.round((active / total) * 100) : 0;
@@ -128,6 +164,7 @@ export default function DashboardOverview({ stats }) {
   const active = stats?.active ?? 0;
   const inactive = stats?.inactive ?? 0;
   const monthly = stats?.monthly ?? [];
+  const completion = stats?.completion ?? { served: 0, total: 0 };
   const unread = stats?.unread ?? 0;
   const values = { employees, files: stats?.files ?? 0, categories: stats?.categories ?? 0, unread };
   const notes = {
@@ -160,6 +197,10 @@ export default function DashboardOverview({ stats }) {
       <div className="charts-grid">
         <MonthlyChart monthly={monthly} />
         <StatusChart active={active} inactive={inactive} />
+      </div>
+
+      <div className="charts-grid charts-grid--single">
+        <CompletionCard served={completion.served} total={completion.total} />
       </div>
 
       <footer className="dash-footer">© {new Date().getFullYear()} الرحمة للتوظيف · لوحة الإدارة</footer>

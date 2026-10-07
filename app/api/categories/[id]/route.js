@@ -23,11 +23,13 @@ export async function DELETE(request, { params }) {
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
   const { id } = await params;
   const admin = getAdminClient();
-  // لو القسم مستخدم في ملفات موجودة، نمنع الحذف بدل ما نكسر الملفات القديمة
-  const { count } = await admin.from('payslips').select('*', { count: 'exact', head: true }).eq('category', (await admin.from('payslip_categories').select('name').eq('id', id).maybeSingle()).data?.name ?? '__none__');
-  if (count > 0) {
-    return NextResponse.json({ error: `القسم ده مستخدم في ${count} ملف. غيّر ملفاتك للقسم التاني الأول.` }, { status: 409 });
-  }
+  const { data: category, error: lookupError } = await admin.from('payslip_categories').select('name').eq('id', id).maybeSingle();
+  if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 400 });
+  if (!category) return NextResponse.json({ error: 'القسم مش موجود' }, { status: 404 });
+  const { error: requestsError } = await admin.from('file_requests').update({ category: 'عام' }).eq('category', category.name);
+  if (requestsError) return NextResponse.json({ error: `تعذر تحديث طلبات الوكيل المرتبطة: ${requestsError.message}` }, { status: 400 });
+  const { error: filesError } = await admin.from('payslips').update({ category: 'عام' }).eq('category', category.name);
+  if (filesError) return NextResponse.json({ error: `تعذر نقل الملفات المرتبطة للقسم العام: ${filesError.message}` }, { status: 400 });
   const { error } = await admin.from('payslip_categories').delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

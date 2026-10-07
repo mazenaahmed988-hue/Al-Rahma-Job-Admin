@@ -15,16 +15,41 @@ export async function GET() {
   return NextResponse.json({ messages: data ?? [] });
 }
 
-/** تحديد كمقروء / غير مقروء */
+/** تحديد القراءة أو تعديل نص الرسالة ونوعها */
 export async function PATCH(request) {
   const supabase = await createClient();
   const result = await supabase.auth.getUser();
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
-  const { id, is_read: isRead } = await request.json();
+  const body = await request.json();
+  const { id, is_read: isRead } = body;
   if (!id) return NextResponse.json({ error: 'مفيش معرف رسالة' }, { status: 400 });
-  const { data, error } = await getAdminClient().from('messages').update({ is_read: Boolean(isRead) }).eq('id', id).select().single();
+  const update = {};
+  if (isRead !== undefined) update.is_read = Boolean(isRead);
+  if (body.body !== undefined) {
+    const text = String(body.body).trim();
+    if (text.length < 1 || text.length > 2000) return NextResponse.json({ error: 'نص الرسالة لازم يكون من 1 لـ 2000 حرف' }, { status: 400 });
+    update.body = text;
+  }
+  if (body.message_type !== undefined) {
+    const type = String(body.message_type).trim();
+    if (type.length < 2 || type.length > 60) return NextResponse.json({ error: 'نوع الرسالة غير صالح' }, { status: 400 });
+    update.message_type = type;
+  }
+  if (!Object.keys(update).length) return NextResponse.json({ error: 'مفيش بيانات للتعديل' }, { status: 400 });
+  const { data, error } = await getAdminClient().from('messages').update(update).eq('id', id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ message: data });
+}
+
+export async function DELETE(request) {
+  const supabase = await createClient();
+  const result = await supabase.auth.getUser();
+  if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
+  const { id } = await request.json();
+  if (!id) return NextResponse.json({ error: 'مفيش معرف رسالة' }, { status: 400 });
+  const { error } = await getAdminClient().from('messages').delete().eq('id', id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true, deleted: id });
 }
 
 /** رد الإدارة على الرسالة */

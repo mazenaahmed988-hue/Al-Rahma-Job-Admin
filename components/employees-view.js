@@ -276,7 +276,7 @@ export default function EmployeesView({ initialEmployees }) {
         {deleting && (
           <ConfirmDialog
             title="حذف الموظف"
-            message={`متأكد إنك عايز تحذف ${deleting.full_name}؟ الخطوة دي مش بترجع تاني.`}
+            message={`متأكد إنك عايز تحذف ${deleting.full_name}؟ هتتمسح كمان كل ملفاته المرتبطة من السجل، ورسائله هتفضل محفوظة من غير ربط بحسابه. الخطوة دي مش بترجع تاني.`}
             confirmLabel="حذف الموظف"
             busy={busyId === deleting.id}
             onConfirm={confirmDelete}

@@ -9,7 +9,7 @@ const realtimeClient = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 );
 import {
-  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, FolderOpen, Link2Off, Pencil, Search, Table2, Trash2, UserRound, X,
+  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, FolderOpen, Link2Off, MoreHorizontal, Pencil, RotateCcw, Search, ScanSearch, Tags, Trash2, UserRound, UserRoundPlus, X,
 } from 'lucide-react';
 import { MONTHS, detectKind, initials } from '@/lib/files';
 import StatCard from '@/components/ui/stat-card';
@@ -17,17 +17,22 @@ import KindIcon from '@/components/ui/kind-icon';
 import GlassModal from '@/components/ui/glass-modal';
 import ConfirmDialog from '@/components/confirm-dialog';
 import FilesSingleEntry from '@/components/files-single-entry';
-import FilesBulkEntry from '@/components/files-bulk-entry';
-import HelpCenter from '@/components/help-center';
+import SmartPathProcessor from '@/components/smart-path-processor';
+import QuickManagementDrawer from '@/components/quick-management-drawer';
 
-export default function FilesView({ employees, initialFiles }) {
+export default function FilesView({ employees: initialEmployees, categories: initialCategories, initialFiles }) {
   const [files, setFiles] = useState(initialFiles ?? []);
+  const [employees, setEmployees] = useState(initialEmployees ?? []);
+  const [categories, setCategories] = useState(initialCategories ?? []);
+  const [drawer, setDrawer] = useState(null);
   const [mode, setMode] = useState('single');
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [avatars, setAvatars] = useState({});
+  const [retryingId, setRetryingId] = useState(null);
   const [query, setQuery] = useState('');
   const [filterYear, setFilterYear] = useState('all');
   const [filterMonth, setFilterMonth] = useState('all');
@@ -37,13 +42,30 @@ export default function FilesView({ employees, initialFiles }) {
     setFiles(initialFiles ?? []);
   }, [initialFiles]);
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/employees/avatars').then((response) => response.json()).then((payload) => {
+      if (active && payload.avatars) setAvatars(payload.avatars);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   // تحديث سجل الملفات فوراً عند أي تغيير من البرنامج المحلي أو لوحة أخرى.
   useEffect(() => {
     const channel = realtimeClient
       .channel('admin-files-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'file_requests' }, (payload) => {
+        const request = payload.new;
+        const requestId = request?.payslip_id ? request : payload.old;
+        if (!requestId?.payslip_id) return;
+        setFiles((previous) => previous.map((file) => file.id === requestId.payslip_id
+          ? { ...file, file_requests: payload.eventType === 'DELETE' ? [] : [request] }
+          : file));
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payslips' }, (payload) => {
         if (payload.eventType === 'DELETE') {
           setFiles((prev) => prev.filter((file) => file.id !== payload.old?.id));
+          setSelectedIds((prev) => prev.filter((id) => id !== payload.old?.id));
           return;
         }
         const next = payload.new;
@@ -117,29 +139,58 @@ export default function FilesView({ employees, initialFiles }) {
     }
   }
 
-  /** تسجيل كل الصفوف مرة واحدة */
-  async function saveBulk(rows, options = {}) {
+  /** اعتماد المسارات بعد مراجعة المعاينة الذكية */
+  async function saveSmartBatch(rows) {
     setBusy(true);
     try {
-      const res = await fetch('/api/files', {
-        method: 'PUT',
+      const response = await fetch('/api/files/batch', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows }),
       });
-      const payload = await res.json();
-      if (!res.ok) return handleError(payload);
-
-      setFiles((prev) => [...payload.files, ...prev]);
-      flash(
-        'ok',
-        `تم تسجيل ${payload.saved} مسار${payload.problems?.length ? ` · ${payload.problems.length} سطر محتاج مراجعة` : ''}`,
-      );
-      if (options.reset) options.reset();
+      const payload = await response.json();
+      if (!response.ok) {
+        handleError(payload);
+        return false;
+      }
+      setFiles((previous) => [...(payload.saved ?? []), ...previous]);
+      flash('ok', `تم اعتماد ${payload.saved?.length ?? 0} مسار وإرسالها للوكيل المحلي${payload.problems?.length ? ` · ${payload.problems.length} صف محتاج مراجعة` : ''}`);
+      return true;
     } catch {
       flash('error', 'مفيش اتصال بالسيرفر');
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  function openDrawer(options = {}) {
+    setDrawer({ tab: options.tab ?? 'employee', ...options });
+  }
+
+  function handleEmployeeCreated(employee) {
+    setEmployees((previous) => [...previous, employee].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
+    if (drawer?.rowId) window.dispatchEvent(new CustomEvent('smart-path-employee-added', { detail: { rowId: drawer.rowId, employee } }));
+    setDrawer(null);
+  }
+
+  function handleEmployeeUpdated(employee) {
+    setEmployees((previous) => previous.map((item) => item.id === employee.id ? { ...item, ...employee } : item));
+    window.dispatchEvent(new CustomEvent('smart-path-employee-updated', { detail: { employee } }));
+    setDrawer(null);
+  }
+
+  function handleCategoryCreated(category) {
+    setCategories((previous) => [...previous, category].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+    if (drawer?.rowId) window.dispatchEvent(new CustomEvent('smart-path-category-added', { detail: { rowId: drawer.rowId, category } }));
+    setDrawer(null);
+  }
+
+  function handleCategoryUpdated(category) {
+    const previousName = categories.find((item) => item.id === category.id)?.name;
+    setCategories((previous) => previous.map((item) => item.id === category.id ? category : item).sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+    if (previousName) window.dispatchEvent(new CustomEvent('smart-path-category-renamed', { detail: { previousName, category } }));
+    setDrawer(null);
   }
 
   async function saveEdit() {
@@ -160,7 +211,7 @@ export default function FilesView({ employees, initialFiles }) {
       const payload = await res.json();
       if (!res.ok) return handleError(payload);
 
-      setFiles((prev) => prev.map((item) => (item.id === editing.id ? payload.file : item)));
+      setFiles((prev) => prev.map((item) => (item.id === editing.id ? { ...item, ...payload.file, employees: item.employees, file_requests: item.file_requests } : item)));
       setEditing(null);
       flash('ok', 'تم حفظ التعديلات');
     } catch {
@@ -186,6 +237,28 @@ export default function FilesView({ employees, initialFiles }) {
     window.open(`/api/files/download?id=${encodeURIComponent(item.id)}`, '_blank', 'noopener,noreferrer');
   }
 
+  function toggleSelected(id) {
+    setSelectedIds((previous) => previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]);
+  }
+
+  function toggleAllVisible() {
+    const visibleIds = filtered.map((item) => item.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    setSelectedIds((previous) => allSelected ? previous.filter((id) => !visibleIds.includes(id)) : [...new Set([...previous, ...visibleIds])]);
+  }
+
+  async function retryRequest(item) {
+    setRetryingId(item.id);
+    try {
+      const response = await fetch('/api/files', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, retry: true }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'تعذرت إعادة المحاولة');
+      setFiles((previous) => previous.map((file) => file.id === item.id ? { ...file, ...payload.file, employees: file.employees, file_requests: [payload.request ?? { status: 'pending' }] } : file));
+      flash('ok', 'رجّعنا الطلب لطابور الوكيل المحلي');
+    } catch (error) { flash('error', error.message || 'مفيش اتصال بالسيرفر'); }
+    finally { setRetryingId(null); }
+  }
+
   async function doDelete() {
     setBusy(true);
     try {
@@ -198,8 +271,9 @@ export default function FilesView({ employees, initialFiles }) {
       if (!res.ok) return handleError(payload);
 
       setFiles((prev) => prev.filter((item) => !confirmDelete.includes(item.id)));
+      setSelectedIds((previous) => previous.filter((id) => !confirmDelete.includes(id)));
       setConfirmDelete(null);
-      flash('ok', 'تم حذف السجل');
+      flash('ok', `تم حذف ${payload.deleted?.length ?? confirmDelete.length} سجل`);
     } catch {
       flash('error', 'مفيش اتصال بالسيرفر');
     } finally {
@@ -241,70 +315,30 @@ export default function FilesView({ employees, initialFiles }) {
         </div>
       </div>
 
-      {/* 1) شريط الإحصائيات */}
       <div className="stats-row">
         <StatCard icon={Link2Off} label="إجمالي الملفات المربوطة" value={linkedFiles.length} delay={0} />
         <StatCard icon={UserRound} label="الموظفين المكتملين" value={completedEmployees} delay={0.06} />
       </div>
 
-      {/* 2) منطقة الإدخال الذكي — وضعان */}
-      <div className="entry-card glass">
-        <div className="entry-toggle" role="group" aria-label="طريقة الإدخال">
-          <div className="entry-toggle-group">
-            <button
-              type="button"
-              className={mode === 'single' ? 'is-active' : ''}
-              onClick={() => setMode('single')}
-              aria-pressed={mode === 'single'}
-            >
-              <UserRound size={15} /> إدخال فردي
-            </button>
-            <button
-              type="button"
-              className={mode === 'bulk' ? 'is-active' : ''}
-              onClick={() => setMode('bulk')}
-              aria-pressed={mode === 'bulk'}
-            >
-              <Table2 size={15} /> لصق مجمع من الإكسيل
-            </button>
-            <button type="button" className="help-button" onClick={() => setHelpOpen(true)} title="اقرأ التعليمات">
-              <span aria-hidden="true">📖</span>
-              <span>اقرأ التعليمات</span>
-            </button>
-          </div>
-        </div>
+      <div className="master-control-actions">
+        <button type="button" className="ghost-button" onClick={() => openDrawer({ tab: 'employee' })}><UserRoundPlus size={17} /> إدارة الموظفين السريعة</button>
+        <button type="button" className="ghost-button" onClick={() => openDrawer({ tab: 'category' })}><Tags size={17} /> إدارة الأقسام</button>
+      </div>
 
+      <div className="entry-card glass">
+        <div className="entry-toggle" role="group" aria-label="طريقة إدخال الملفات">
+          <button type="button" className={mode === 'single' ? 'is-active' : ''} onClick={() => setMode('single')} aria-pressed={mode === 'single'}><UserRound size={15} /> إدخال فردي</button>
+          <button type="button" className={mode === 'smart' ? 'is-active' : ''} onClick={() => setMode('smart')} aria-pressed={mode === 'smart'}><ScanSearch size={15} /> معالجة ذكية للمسارات</button>
+        </div>
         <AnimatePresence mode="wait">
           {mode === 'single' ? (
-            <FilesSingleEntry
-              key="single"
-              employees={employees}
-              onSubmit={saveOne}
-              busy={busy}
-              notice={notice}
-            />
+            <FilesSingleEntry key="single" employees={employees} onSubmit={saveOne} busy={busy} notice={notice} />
           ) : (
-            <FilesBulkEntry
-              key="bulk"
-              employees={employees}
-              onSubmit={saveBulk}
-              busy={busy}
-              onOpenHelp={() => setHelpOpen(true)}
-            />
+            <SmartPathProcessor key="smart" employees={employees} categories={categories} busy={busy} onSubmit={saveSmartBatch} onOpenDrawer={openDrawer} />
           )}
         </AnimatePresence>
       </div>
-
-      {mode === 'bulk' && notice && (
-        <motion.p
-          className={`notice notice--${notice.kind}`}
-          role="status"
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          {notice.text}
-        </motion.p>
-      )}
+      {notice && <motion.p className={`notice notice--${notice.kind}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>{notice.text}</motion.p>}
 
       {/* 3) جدول إدارة البيانات */}
       <div className="files-managed">
@@ -315,7 +349,8 @@ export default function FilesView({ employees, initialFiles }) {
           <p>{filtered.length} من {files.length} ملفات</p>
         </div>
         <div className="heading-actions">
-            <button type="button" className="ghost-button" onClick={exportCsv} disabled={!filtered.length}>
+          {selectedIds.length > 0 && <button type="button" className="bulk-delete-button" onClick={() => setConfirmDelete(selectedIds)}><Trash2 size={16} /> حذف المحدد ({selectedIds.length})</button>}
+          <button type="button" className="ghost-button" onClick={exportCsv} disabled={!filtered.length}>
               <FileSpreadsheet size={16} /> تصدير إلى Excel/CSV
             </button>
           </div>
@@ -376,62 +411,41 @@ export default function FilesView({ employees, initialFiles }) {
             <table className="emp-table">
               <thead>
                 <tr>
+                  <th className="pick-col"><input type="checkbox" aria-label="تحديد كل الملفات الظاهرة" checked={filtered.length > 0 && filtered.every((item) => selectedIds.includes(item.id))} onChange={toggleAllVisible} /></th>
                   <th>الموظف</th>
+                  <th>الملف</th>
                   <th>الشهر/السنة</th>
-                  <th>مسار الملف</th>
-                  <th>حالة الربط</th>
+                  <th>الحالة</th>
                   <th><span className="sr-only">إجراءات</span></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((item) => {
-                  const kind = detectKind(item.local_path);
+                  const kind = detectKind(item.file_name || item.local_path);
+                  const queueStatus = item.file_requests?.[0]?.status;
+                  const state = queueStatus === 'failed' ? 'failed' : queueStatus === 'processing' ? 'processing' : item.status === 'available' ? 'completed' : queueStatus === 'completed' ? 'completed' : 'pending';
+                  const stateLabels = { completed: 'مكتمل', pending: 'قيد الانتظار', processing: 'جاري الرفع', failed: 'فشل' };
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={selectedIds.includes(item.id) ? 'is-selected' : ''}>
+                      <td className="pick-col" data-label="تحديد"><input type="checkbox" aria-label={`تحديد ملف ${item.file_name || item.category}`} checked={selectedIds.includes(item.id)} onChange={() => toggleSelected(item.id)} /></td>
                       <td data-label="الموظف">
                         <div className="emp-cell">
-                          <span className="emp-avatar">{initials(item.employees?.full_name)}</span>
+                          <span className="emp-avatar">{avatars[item.employee_id] ? <img src={avatars[item.employee_id]} alt={`صورة ${item.employees?.full_name ?? 'الموظف'}`} /> : initials(item.employees?.full_name)}</span>
                           <div>
                             <strong>{item.employees?.full_name ?? '—'}</strong>
                             <small className="mono">{item.employees?.national_id ?? ''}</small>
                           </div>
                         </div>
                       </td>
-                      <td data-label="الاسم والقسم">
-                        {editing?.id === item.id ? <div className="inline-fields"><input value={editing.file_name ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, file_name: e.target.value }))} placeholder="اسم الملف" /><input value={editing.category ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, category: e.target.value }))} placeholder="القسم" /></div> : <div><strong>{item.file_name || item.category || '—'}</strong><small className="muted-cell">{item.category || 'عام'}</small></div>}
+                      <td data-label="الملف">
+                        {editing?.id === item.id ? <div className="inline-fields"><input value={editing.file_name ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, file_name: e.target.value }))} placeholder="اسم الملف" /><input value={editing.category ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, category: e.target.value }))} placeholder="القسم" /><input value={editing.local_path ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, local_path: e.target.value }))} placeholder="المسار المحلي" dir="ltr" /></div> : <div className="grid-file" title={item.local_path || ''}><span className={`kind-icon kind-icon--${kind}`}><KindIcon kind={kind} size={17} /></span><span><strong>{item.file_name || item.local_path?.split(/[\\/]/).pop() || item.category || 'ملف بدون اسم'}</strong><small>{item.category || 'عام'}</small></span></div>}
                       </td>
                       <td data-label="الشهر/السنة">
                         {editing?.id === item.id ? <div className="inline-fields inline-fields--period"><select value={editing.month ?? 1} onChange={(e) => setEditing((prev) => ({ ...prev, month: Number(e.target.value), month_label: MONTHS[Number(e.target.value) - 1] }))}>{MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select><input type="number" min="2000" max="2100" value={editing.year ?? ''} onChange={(e) => setEditing((prev) => ({ ...prev, year: Number(e.target.value) }))} /></div> : <span className="mono">{item.month_label} {item.year}</span>}
                       </td>
-                      <td data-label="مسار الملف">
-                        <span className="path-cell">
-                          <span className={`kind-icon kind-icon--${kind}`}>
-                            <KindIcon kind={kind} size={15} />
-                          </span>
-                          {item.local_path || <span className="muted-cell">غير مربوط</span>}
-                        </span>
-                      </td>
-                      <td data-label="حالة الربط">
-                        <span className={`link-state link-state--${item.local_path ? 'linked' : 'none'}`}>
-                          {item.local_path ? <CheckCircle2 size={14} /> : <Link2Off size={14} />}
-                          {item.local_path ? 'مربوط' : 'غير مربوط'}
-                        </span>
-                      </td>
+                      <td data-label="الحالة"><span className={`file-status-badge file-status-badge--${state}`}>{state === 'completed' ? <CheckCircle2 size={14} /> : state === 'failed' ? <Link2Off size={14} /> : null}{stateLabels[state]}</span>{state === 'failed' && <button type="button" className="retry-button" onClick={() => retryRequest(item)} disabled={retryingId === item.id} aria-label="إعادة محاولة رفع الملف" title="إعادة المحاولة">{retryingId === item.id ? <span className="spin">⟳</span> : <RotateCcw size={14} />}</button>}</td>
                       <td className="actions-cell">
-                        <div className="row-actions">
-                          <button type="button" className="icon-button icon-button--download" onClick={() => downloadFile(item)} aria-label="تحميل الملف" title="تحميل"><Download size={16} /></button>
-                          <button type="button" className="icon-button" onClick={() => toggleVisibility(item)} disabled={busy} aria-label={item.is_visible ? 'إخفاء الملف' : 'إظهار الملف'} title={item.is_visible ? 'إخفاء' : 'إظهار'}>{item.is_visible ? <Eye size={16} /> : <EyeOff size={16} />}</button>
-                          {editing?.id === item.id ? <><button type="button" className="icon-button icon-button--success" onClick={saveEdit} disabled={busy} aria-label="حفظ التعديل" title="حفظ"><CheckCircle2 size={16} /></button><button type="button" className="icon-button" onClick={() => setEditing(null)} disabled={busy} aria-label="إلغاء التعديل" title="إلغاء"><X size={16} /></button></> : <button type="button" className="icon-button" onClick={() => setEditing({ ...item })} aria-label="تعديل السجل" title="تعديل"><Pencil size={16} /></button>}
-                          <button
-                            type="button"
-                            className="icon-button icon-button--danger"
-                            onClick={() => setConfirmDelete([item.id])}
-                            aria-label="حذف السجل"
-                            title="حذف"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {editing?.id === item.id ? <div className="row-actions"><button type="button" className="icon-button icon-button--success" onClick={saveEdit} disabled={busy} aria-label="حفظ التعديل" title="حفظ"><CheckCircle2 size={16} /></button><button type="button" className="icon-button" onClick={() => setEditing(null)} disabled={busy} aria-label="إلغاء التعديل" title="إلغاء"><X size={16} /></button></div> : <details className="file-action-menu"><summary className="icon-button" aria-label="إجراءات الملف"><MoreHorizontal size={17} /></summary><div className="file-action-menu-panel"><button type="button" onClick={() => downloadFile(item)}><Download size={15} /> تحميل الملف</button><button type="button" onClick={() => toggleVisibility(item)}><Eye size={15} /> {item.is_visible ? 'إخفاء من البوابة' : 'إظهار في البوابة'}</button><button type="button" onClick={() => setEditing({ ...item })}><Pencil size={15} /> تعديل البيانات</button><button type="button" className="is-danger" onClick={() => setConfirmDelete([item.id])}><Trash2 size={15} /> حذف الملف</button></div></details>}
                       </td>
                     </tr>
                   );
@@ -516,8 +530,19 @@ export default function FilesView({ employees, initialFiles }) {
         )}
       </AnimatePresence>
 
-      {/* مركز المساعدة — المحتوى بيتغير حسب القسم (مركز الملفات هنا) */}
-      <HelpCenter open={helpOpen} onClose={() => setHelpOpen(false)} section="files" />
+      <QuickManagementDrawer
+        open={Boolean(drawer)}
+        initialTab={drawer?.tab ?? 'employee'}
+        employees={employees}
+        categories={categories}
+        suggestedName={drawer?.full_name ?? ''}
+        suggestedNationalId={drawer?.national_id ?? ''}
+        onClose={() => setDrawer(null)}
+        onEmployeeCreated={handleEmployeeCreated}
+        onEmployeeUpdated={handleEmployeeUpdated}
+        onCategoryCreated={handleCategoryCreated}
+        onCategoryUpdated={handleCategoryUpdated}
+      />
     </section>
   );
 }

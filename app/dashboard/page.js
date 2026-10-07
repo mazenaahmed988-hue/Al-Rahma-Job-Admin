@@ -9,16 +9,30 @@ export default async function DashboardPage() {
   const admin = getAdminClient();
   const [employees, files, categories, unread] = await Promise.all([
     admin.from('employees').select('id, is_active'),
-    admin.from('payslips').select('id, created_at'),
+    admin.from('payslips').select('id, employee_id, created_at'),
     admin.from('payslip_categories').select('id'),
     admin.from('messages').select('id', { count: 'exact', head: true }).eq('is_read', false),
   ]);
 
   const rows = employees.data ?? [];
   const activeCount = rows.filter((row) => row.is_active).length;
+  const now = new Date();
+
+  // معدل الإنجاز الشهري: عدد الموظفين النشطين اللي اتربط ليهم ملفات في الشهر الحالي ÷ إجمالي النشطين
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const activeIds = new Set(rows.filter((row) => row.is_active).map((row) => row.id));
+  const servedActiveThisMonth = new Set(
+    (files.data ?? [])
+      .filter((file) => {
+        const created = new Date(file.created_at);
+        return file.employee_id && activeIds.has(file.employee_id) && created >= monthStart && created < monthEnd;
+      })
+      .map((file) => file.employee_id),
+  );
+  const completion = { served: servedActiveThisMonth.size, total: activeCount };
 
   // آخر 6 شهور: عدد الملفات المرفوعة في كل شهر
-  const now = new Date();
   const monthly = [];
   for (let offset = 5; offset >= 0; offset -= 1) {
     const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
@@ -39,6 +53,7 @@ export default async function DashboardPage() {
     categories: (categories.data ?? []).length,
     unread: unread.count ?? 0,
     monthly,
+    completion,
   };
 
   return <DashboardOverview stats={stats} />;

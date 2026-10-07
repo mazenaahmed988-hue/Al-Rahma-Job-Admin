@@ -53,17 +53,11 @@ export async function DELETE(_request, { params }) {
 
   const admin = getAdminClient();
 
-  // حماية: ممنوع حذف موظف لسه عليه ملفات
-  const { count, error: countError } = await admin
-    .from('payslips')
-    .select('id', { count: 'exact', head: true })
-    .eq('employee_id', id);
-  if (countError) return NextResponse.json({ error: countError.message }, { status: 500 });
-  if (count && count > 0) {
-    return NextResponse.json({ error: 'يرجى حذف ملفات الموظف أولاً', files: count }, { status: 409 });
-  }
-
   const { data: employee } = await admin.from('employees').select('avatar_url').eq('id', id).maybeSingle();
+  const { error: filesError } = await admin.from('payslips').delete().eq('employee_id', id);
+  if (filesError) return NextResponse.json({ error: `تعذر حذف ملفات الموظف المرتبطة: ${filesError.message}` }, { status: 400 });
+  const { error: messagesError } = await admin.from('messages').update({ employee_id: null }).eq('employee_id', id);
+  if (messagesError) return NextResponse.json({ error: `تعذر فصل رسائل الموظف: ${messagesError.message}` }, { status: 400 });
   const { error } = await admin.from('employees').delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 

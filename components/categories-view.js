@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, FolderOpen, Loader2, Pencil, Plus, Tags, Trash2, X } from 'lucide-react';
+import { Check, FileSpreadsheet, FolderOpen, Loader2, Pencil, Plus, Search, Tags, Trash2, X } from 'lucide-react';
 
 export default function CategoriesView({ initialCategories }) {
   const [categories, setCategories] = useState(initialCategories ?? []);
@@ -11,6 +11,20 @@ export default function CategoriesView({ initialCategories }) {
   const [editName, setEditName] = useState('');
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => categories.filter((category) => category.name.toLocaleLowerCase('ar').includes(query.trim().toLocaleLowerCase('ar'))), [categories, query]);
+
+  function exportCategories() {
+    const rows = [['اسم القسم'], ...filtered.map((category) => [category.name])];
+    const escape = (value) => `"${String(value).replace(/"/g, '"')}"`;
+    const csv = `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\r\n')}`;
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    link.href = url;
+    link.download = `file-categories-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   function flash(kind, text) { setNotice({ kind, text }); }
 
@@ -53,7 +67,7 @@ export default function CategoriesView({ initialCategories }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
       setCategories((prev) => prev.filter((item) => item.id !== category.id));
-      flash('ok', `تم حذف قسم "${category.name}"`);
+      flash('ok', `تم حذف قسم "${category.name}" ونقل ملفاته للقسم العام`);
     } catch (error) { flash('error', error.message); }
     finally { setBusy(null); }
   }
@@ -66,7 +80,7 @@ export default function CategoriesView({ initialCategories }) {
           <h2>أقسام الملفات</h2>
           <p>الأقسام دي بتظهر في شاشة رفع الملفات، والمستخدم يختار منها</p>
         </div>
-        <span className="section-badge">{categories.length} قسم <Tags size={16} /></span>
+        <div className="heading-actions"><button type="button" className="ghost-button" onClick={exportCategories} disabled={!filtered.length}><FileSpreadsheet size={16} /> تصدير</button><span className="section-badge">{categories.length} قسم <Tags size={16} /></span></div>
       </div>
 
       <form className="category-add glass" onSubmit={create}>
@@ -79,13 +93,14 @@ export default function CategoriesView({ initialCategories }) {
         </button>
       </form>
 
+      <div className="filters glass"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن قسم" aria-label="بحث في أقسام الملفات" />{query && <button type="button" onClick={() => setQuery('')} aria-label="مسح البحث"><X size={15} /></button>}</div></div>
       {notice && <motion.p className={`notice notice--${notice.kind}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>{notice.text}</motion.p>}
 
-      {categories.length === 0 ? (
-        <div className="empty-state glass"><FolderOpen size={34} /><strong>مفيش أقسام لسه</strong><p>ابدأ بإضافة أول قسم زي "مفردات مرتب"</p></div>
+      {filtered.length === 0 ? (
+        <div className="empty-state glass"><FolderOpen size={34} /><strong>{categories.length ? 'مفيش أقسام مطابقة' : 'مفيش أقسام لسه'}</strong><p>{categories.length ? 'جرّب كلمة بحث تانية.' : 'ابدأ بإضافة أول قسم زي "مفردات مرتب"'}</p></div>
       ) : (
         <ul className="category-list">
-          {categories.map((category) => (
+          {filtered.map((category) => (
             <motion.li key={category.id} className="category-item glass" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} layout>
               {editing?.id === category.id ? (
                 <>

@@ -197,8 +197,36 @@ export async function PATCH(request) {
   const result = await supabase.auth.getUser();
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
 
-  const { id, is_visible: isVisible, status, local_path: localPath, file_name: fileName, category, month, year } = await request.json();
+  const { id, is_visible: isVisible, status, retry, local_path: localPath, file_name: fileName, category, month, year } = await request.json();
   if (!id) return NextResponse.json({ error: 'مفيش معرف ملف' }, { status: 400 });
+
+  const admin = getAdminClient();
+  if (retry) {
+    const { data: failedRequest, error: failedLookupError } = await admin.from('file_requests')
+      .select('id').eq('payslip_id', id).eq('status', 'failed')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (failedLookupError) return NextResponse.json({ error: failedLookupError.message }, { status: 500 });
+    let queueRequest;
+    if (failedRequest) {
+      const { data, error } = await admin.from('file_requests').update({ status: 'pending', error: null, claimed_at: null, completed_at: null, device_id: null })
+        .eq('id', failedRequest.id).select('id, status, error, created_at').single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      queueRequest = data;
+    } else {
+      const { data: file, error: fileError } = await admin.from('payslips').select('id, employee_id, local_path, year, month, category').eq('id', id).maybeSingle();
+      if (fileError || !file) return NextResponse.json({ error: fileError?.message ?? 'الملف مش موجود' }, { status: 404 });
+      if (!file.local_path) return NextResponse.json({ error: 'الملف ملوش مسار محلي لإعادة المحاولة' }, { status: 400 });
+      const { data, error } = await admin.from('file_requests').insert({
+        employee_id: file.employee_id, payslip_id: file.id, local_path: file.local_path,
+        year: file.year, month: file.month, category: file.category, status: 'pending',
+      }).select('id, status, error, created_at').single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      queueRequest = data;
+    }
+    const { data: updatedFile, error: updateError } = await admin.from('payslips').update({ status: 'pending' }).eq('id', id).select(FILE_COLUMNS).single();
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return NextResponse.json({ file: updatedFile, request: queueRequest });
+  }
 
   const update = {};
   if (isVisible !== undefined) update.is_visible = Boolean(isVisible);
@@ -223,7 +251,6 @@ export async function PATCH(request) {
   }
 
   if (!Object.keys(update).length) return NextResponse.json({ error: 'مفيش بيانات للتعديل' }, { status: 400 });
-  const admin = getAdminClient();
   const { data, error } = await admin.from('payslips').update(update).eq('id', id).select(FILE_COLUMNS).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
@@ -244,7 +271,10 @@ export async function DELETE(request) {
   const ids = Array.isArray(body.ids) ? body.ids.filter(Boolean) : (body.id ? [body.id] : []);
   if (!ids.length) return NextResponse.json({ error: 'مفيش معرف ملف' }, { status: 400 });
 
-  const { data, error } = await getAdminClient().from('payslips').delete().in('id', ids).select('id');
+  const admin = getAdminClient();
+  const { error: queueError } = await admin.from('file_requests').delete().in('payslip_id', ids);
+  if (queueError) return NextResponse.json({ error: queueError.message }, { status: 400 });
+  const { data, error } = await admin.from('payslips').delete().in('id', ids).select('id');
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, deleted: (data ?? []).map((row) => row.id) });
 }

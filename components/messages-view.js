@@ -1,10 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, CheckCheck, Inbox, Loader2, MailOpen, Pencil, Search, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import {
-  Check, CheckCheck, Inbox, Loader2, MailOpen, Search, Send, Sparkles, X,
-} from 'lucide-react';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -14,7 +12,7 @@ function formatDate(value) {
 
 const FILTERS = [
   { value: 'all', label: 'الكل' },
-  { value: 'unread', label: 'مقروء' },
+  { value: 'unread', label: 'غير مقروء' },
   { value: 'replied', label: 'تم الرد' },
   { value: 'pending', label: 'لم يتم الرد' },
 ];
@@ -26,11 +24,28 @@ export default function MessagesView({ initialMessages }) {
   const [openId, setOpenId] = useState(null);
   const [replies, setReplies] = useState({});
   const [sending, setSending] = useState(false);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [savingMessage, setSavingMessage] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch('/api/messages', { cache: 'no-store' });
+        const payload = await response.json();
+        if (active && response.ok) setMessages(payload.messages ?? []);
+      } catch { /* نخلي البيانات المحمّلة ظاهرة لو الاتصال المؤقت وقع */ }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
 
   const counts = useMemo(() => ({
     all: messages.length,
-    unread: messages.filter((m) => m.is_read).length,
+    unread: messages.filter((m) => !m.is_read).length,
     replied: messages.filter((m) => m.admin_reply).length,
     pending: messages.filter((m) => !m.admin_reply).length,
   }), [messages]);
@@ -38,7 +53,7 @@ export default function MessagesView({ initialMessages }) {
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
     return messages.filter((message) => {
-      if (filter === 'unread' && !message.is_read) return false;
+      if (filter === 'unread' && message.is_read) return false;
       if (filter === 'replied' && !message.admin_reply) return false;
       if (filter === 'pending' && message.admin_reply) return false;
       if (!term) return true;
@@ -71,6 +86,36 @@ export default function MessagesView({ initialMessages }) {
     } catch (error) { patchLocal(message.id, { is_read: message.is_read }); setNotice({ kind: 'error', text: error.message }); }
   }
 
+  async function saveMessage(message) {
+    const text = String(editingMessage?.body ?? '').trim();
+    const type = String(editingMessage?.message_type ?? '').trim();
+    if (!text || !type) return setNotice({ kind: 'error', text: 'نص الرسالة ونوعها مطلوبين' });
+    setSavingMessage(true);
+    try {
+      const response = await fetch('/api/messages', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: message.id, body: text, message_type: type }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'تعذر تعديل الرسالة');
+      patchLocal(message.id, payload.message);
+      setEditingMessage(null);
+      setNotice({ kind: 'ok', text: 'تم تعديل الرسالة' });
+    } catch (error) { setNotice({ kind: 'error', text: error.message }); }
+    finally { setSavingMessage(false); }
+  }
+
+  async function deleteMessage(message) {
+    if (!window.confirm('متأكد من حذف الرسالة؟ الحذف نهائي.')) return;
+    setDeletingId(message.id);
+    try {
+      const response = await fetch('/api/messages', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: message.id }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'تعذر حذف الرسالة');
+      setMessages((previous) => previous.filter((item) => item.id !== message.id));
+      if (openId === message.id) setOpenId(null);
+      setNotice({ kind: 'ok', text: 'تم حذف الرسالة' });
+    } catch (error) { setNotice({ kind: 'error', text: error.message }); }
+    finally { setDeletingId(null); }
+  }
+
   async function sendReply(message) {
     const text = (replies[message.id] ?? '').trim();
     if (text.length < 2) return setNotice({ kind: 'error', text: 'اكتب الرد قبل الإرسال' });
@@ -93,7 +138,7 @@ export default function MessagesView({ initialMessages }) {
           <h2>رسائل الموظفين</h2>
           <p>{counts.all} رسالة · {counts.pending} بانتظار الرد</p>
         </div>
-        <span className="section-badge">{counts.pending} غير مرد عليها <Inbox size={16} /></span>
+        <span className="section-badge">{counts.unread} غير مقروءة · {counts.pending} بانتظار الرد <Inbox size={16} /></span>
       </div>
 
       <div className="filters glass">
@@ -154,7 +199,13 @@ export default function MessagesView({ initialMessages }) {
                   <AnimatePresence initial={false}>
                     {isOpen && (
                       <motion.div className="message-body" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: .25 }}>
-                        <p className="message-text">{message.body}</p>
+                        {editingMessage?.id === message.id ? (
+                          <div className="message-edit-form">
+                            <label>نوع الرسالة<input value={editingMessage.message_type} onChange={(event) => setEditingMessage((prev) => ({ ...prev, message_type: event.target.value }))} maxLength={60} /></label>
+                            <label>نص الرسالة<textarea value={editingMessage.body} onChange={(event) => setEditingMessage((prev) => ({ ...prev, body: event.target.value }))} rows={4} maxLength={2000} /></label>
+                            <div className="reply-actions"><button type="button" className="ghost-button" onClick={() => setEditingMessage(null)}>إلغاء</button><button type="button" className="primary-button" onClick={() => saveMessage(message)} disabled={savingMessage}>{savingMessage ? <Loader2 size={15} className="spin" /> : <Check size={15} />} حفظ التعديل</button></div>
+                          </div>
+                        ) : <p className="message-text">{message.body}</p>}
 
                         {message.admin_reply ? (
                           <div className="admin-reply">
@@ -162,6 +213,11 @@ export default function MessagesView({ initialMessages }) {
                             <p>{message.admin_reply}</p>
                           </div>
                         ) : null}
+
+                        <div className="message-admin-actions">
+                          <button type="button" className="ghost-button" onClick={() => setEditingMessage({ id: message.id, body: message.body, message_type: message.message_type })}><Pencil size={15} /> تعديل الرسالة</button>
+                          <button type="button" className="ghost-button message-delete-button" onClick={() => deleteMessage(message)} disabled={deletingId === message.id}>{deletingId === message.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />} حذف الرسالة</button>
+                        </div>
 
                         <div className="reply-box">
                           <label htmlFor={`reply-${message.id}`}>
