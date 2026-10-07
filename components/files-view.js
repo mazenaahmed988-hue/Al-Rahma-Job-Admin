@@ -9,13 +9,14 @@ const realtimeClient = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 );
 import {
-  CheckCircle2, Download, Eye, EyeOff, FileSpreadsheet, Link2Off, MoreHorizontal, Pencil, RotateCcw, Search, Trash2, UserRound, UserRoundPlus, X,
+  CheckCircle2, FileSpreadsheet, Link2Off, RotateCcw, Search, Trash2, UserRound, UserRoundPlus, X,
 } from 'lucide-react';
 import { MONTHS, detectKind, initials } from '@/lib/files';
 import StatCard from '@/components/ui/stat-card';
 import KindIcon from '@/components/ui/kind-icon';
 import GlassModal from '@/components/ui/glass-modal';
 import ConfirmDialog from '@/components/confirm-dialog';
+import FileActionMenu from '@/components/file-action-menu';
 import SmartPathProcessor from '@/components/smart-path-processor';
 import QuickManagementDrawer from '@/components/quick-management-drawer';
 
@@ -404,7 +405,7 @@ export default function FilesView({ employees: initialEmployees, initialFiles })
                       </td>
                       <td data-label="الحالة"><span className={`file-status-badge file-status-badge--${state}`}>{state === 'completed' ? <CheckCircle2 size={14} /> : state === 'failed' ? <Link2Off size={14} /> : null}{stateLabels[state]}</span>{state === 'failed' && <button type="button" className="retry-button" onClick={() => retryRequest(item)} disabled={retryingId === item.id} aria-label="إعادة محاولة رفع الملف" title="إعادة المحاولة">{retryingId === item.id ? <span className="spin">⟳</span> : <RotateCcw size={14} />}</button>}</td>
                       <td className="actions-cell">
-                        {editing?.id === item.id ? <div className="row-actions"><button type="button" className="icon-button icon-button--success" onClick={saveEdit} disabled={busy} aria-label="حفظ التعديل" title="حفظ"><CheckCircle2 size={16} /></button><button type="button" className="icon-button" onClick={() => setEditing(null)} disabled={busy} aria-label="إلغاء التعديل" title="إلغاء"><X size={16} /></button></div> : <details className="file-action-menu"><summary className="icon-button" aria-label="إجراءات الملف"><MoreHorizontal size={17} /></summary><div className="file-action-menu-panel"><button type="button" onClick={() => downloadFile(item)}><Download size={15} /> تحميل الملف</button><button type="button" onClick={() => toggleVisibility(item)}><Eye size={15} /> {item.is_visible ? 'إخفاء من البوابة' : 'إظهار في البوابة'}</button><button type="button" onClick={() => setEditing({ ...item })}><Pencil size={15} /> تعديل البيانات</button><button type="button" className="is-danger" onClick={() => setConfirmDelete([item.id])}><Trash2 size={15} /> حذف الملف</button></div></details>}
+                        {editing?.id === item.id ? <div className="row-actions"><button type="button" className="icon-button icon-button--success" onClick={saveEdit} disabled={busy} aria-label="حفظ التعديل" title="حفظ"><CheckCircle2 size={16} /></button><button type="button" className="icon-button" onClick={() => setEditing(null)} disabled={busy} aria-label="إلغاء التعديل" title="إلغاء"><X size={16} /></button></div> : <FileActionMenu item={item} busy={busy} onDownload={downloadFile} onToggleVisibility={toggleVisibility} onEdit={setEditing} onDelete={setConfirmDelete} />}
                       </td>
                     </tr>
                   );
