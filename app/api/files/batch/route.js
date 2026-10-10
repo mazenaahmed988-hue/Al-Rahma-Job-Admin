@@ -8,11 +8,15 @@ const EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.png', '.
 // القسم بقى ثابت في الداتابيز بالقيمة دي (الأقسام بقت Hardcoded)
 const FIXED_CATEGORY = 'شيت القبض';
 
-// الاسم المسموح كتابته في الداتابيز لازم يكون حروف عربية بس (من غير إنجليزي/أرقام/رموز).
-// أي حاجة تانية (زي اسم مسار "MY computer work") بتترفض ومش بتمس الداتابيز.
-function arabicNameOnly(value) {
-  const arabic = (String(value ?? '').match(/\p{Script=Arabic}[\p{Script=Arabic}\s]*/gu) ?? []).join(' ').replace(/\s+/g, ' ').trim();
-  return /\p{Script=Arabic}/u.test(arabic) && arabic.replace(/\s+/g, '').length >= 3 ? arabic : '';
+// تنظيف الاسم: بنسمح بالعربي والإنجليزي معاً — بس trim وتنظيف المسافات الزايدة.
+// المسار ككتلة واحدة (C:\...) بيتصطاد لوحده في الـ Parser، فمفيش خطر إن مسار يتخزن كاسم.
+function cleanFullName(value) {
+  return String(value ?? '')
+    .replace(/[\u200f\u200e]/g, ' ')
+    .replace(/[|,،;\t]+/g, ' ')
+    .replace(/[()\[\]{}]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export async function POST(request) {
@@ -25,47 +29,92 @@ export async function POST(request) {
   if (!rows.length || rows.length > 250) return NextResponse.json({ error: 'لازم تبعت بين 1 و250 مسار' }, { status: 400 });
 
   const admin = getAdminClient();
-  const employeeIds = [...new Set(rows.flatMap((row) => {
+  // حل الموظفين: بالإدارة (لو محددة) أو بالرقم القومي المُستخرج من السطر.
+  // لو الرقم القومي مش مسجل، بيتنشأ موظف جديد تلقائياً عشان السطر ميفضلش 'محتاج مراجعة'.
+  const explicitIds = [...new Set(rows.flatMap((row) => {
     const ids = Array.isArray(row.employeeIds) ? row.employeeIds : [row.employeeId];
     return ids.map((id) => String(id ?? '').trim()).filter(Boolean);
   }))];
-  const { data: employees, error: employeeError } = employeeIds.length
-    ? await admin.from('employees').select('id, full_name, national_id').in('id', employeeIds)
+  const lineNationalIds = [...new Set(rows.map((row) => String(row.nationalId ?? '').replace(/[^0-9]/g, '')).filter((id) => id.length === 14))];
+  const { data: employees, error: employeeError } = (explicitIds.length || lineNationalIds.length)
+    ? await admin.from('employees').select('id, full_name, national_id')
+      .or([...(explicitIds.length ? [`id=in.(${explicitIds.join(',')})`] : []), ...(lineNationalIds.length ? [`national_id=in.(${lineNationalIds.join(',')})`] : [])].join(','))
     : { data: [], error: null };
   if (employeeError) return NextResponse.json({ error: employeeError.message }, { status: 500 });
   const employeeMap = new Map((employees ?? []).map((employee) => [employee.id, employee]));
+  const byNationalId = new Map((employees ?? []).map((employee) => [String(employee.national_id ?? ''), employee]));
 
   const records = [];
   const problems = [];
   const rowsById = new Map();
+  const autoCreate = [];
+  const pendingRows = [];
   rows.forEach((row, index) => {
     const localPath = String(row.localPath ?? '').replace(/["']/g, '').trim();
     const selectedEmployeeIds = [...new Set((Array.isArray(row.employeeIds) ? row.employeeIds : [row.employeeId])
       .map((id) => String(id ?? '').trim()).filter(Boolean))];
+    const lineNationalId = String(row.nationalId ?? '').replace(/[^0-9]/g, '');
     const month = Number(row.month);
     const year = Number(row.year);
     const category = FIXED_CATEGORY;
-    if (!selectedEmployeeIds.length) return problems.push({ index, reason: 'اختار موظف واحد على الأقل' });
+    // لو مفيش موظف محدد بس الرقم القومي موجود في السطر، بنحله من الداتابيز
+    // (أو بننشئه جديد) — كده السطر بيتسجل على طول بدون ما يفضل محتاج مراجعة.
+    if (!selectedEmployeeIds.length && lineNationalId.length === 14) {
+      const existing = byNationalId.get(lineNationalId);
+      if (existing) {
+        selectedEmployeeIds.push(existing.id);
+      } else {
+        const name = String(row.employeeName ?? '').trim();
+        autoCreate.push({ index, nationalId: lineNationalId, fullName: name });
+      }
+    }
+    if (!selectedEmployeeIds.length) return problems.push({ index, reason: 'اختار موظف واحد على الأقل أو سطر فيه رقم قومي 14 رقم' });
     if (selectedEmployeeIds.some((id) => !employeeMap.has(id))) return problems.push({ index, reason: 'فيه موظف مش موجود' });
     if (!DRIVE_PATH.test(localPath) || !EXTENSIONS.some((extension) => localPath.toLowerCase().endsWith(extension))) return problems.push({ index, reason: 'مسار الملف أو امتداده غير صالح' });
     if (!Number.isInteger(month) || month < 1 || month > 12) return problems.push({ index, reason: 'الشهر غير صحيح' });
     if (!Number.isInteger(year) || year < 2000 || year > 2100) return problems.push({ index, reason: 'السنة غير صحيحة' });
     const nameFromLine = String(row.employeeName ?? '').trim();
+    const baseRecord = {
+      local_path: localPath,
+      file_name: String(row.fileName ?? '').trim() || localPath.split(/[\\/]/).pop(),
+      category,
+      year,
+      month,
+      month_label: MONTHS[month - 1],
+      status: 'pending',
+      is_visible: true,
+    };
     selectedEmployeeIds.forEach((employeeId) => {
       rowsById.set(employeeId, { employeeId, nameFromLine });
-      records.push({
-        employee_id: employeeId,
-        local_path: localPath,
-        file_name: String(row.fileName ?? '').trim() || localPath.split(/[\\/]/).pop(),
-        category,
-        year,
-        month,
-        month_label: MONTHS[month - 1],
-        status: 'pending',
-        is_visible: true,
-      });
+      records.push({ ...baseRecord, employee_id: employeeId });
     });
+    pendingRows.push({ index, lineNationalId, nameFromLine, baseRecord, month, year, localPath });
   });
+
+  if (!records.length && !autoCreate.length) {
+    return NextResponse.json({ error: 'مفيش مسارات صالحة للتسجيل', problems }, { status: 400 });
+  }
+
+  // إنشاء تلقائي للموظفين الجدد اللي الرقم القومي بتاعهم مش مسجل
+  let createdCount = 0;
+  if (autoCreate.length) {
+    const toInsert = [...new Map(autoCreate.map((item) => [item.nationalId, item])).values()]
+      .map((item) => ({ full_name: cleanFullName(item.fullName) || `موظف ${item.nationalId.slice(-4)}`, national_id: item.nationalId, is_active: true }));
+    const { data: created, error: createError } = await admin.from('employees').insert(toInsert)
+      .select('id, full_name, national_id');
+    if (createError) return NextResponse.json({ error: `فشل إنشاء الموظفين الجدد: ${createError.message}` }, { status: 500 });
+    createdCount = created?.length ?? 0;
+    (created ?? []).forEach((employee) => {
+      employeeMap.set(employee.id, employee);
+      byNationalId.set(String(employee.national_id), employee);
+    });
+    autoCreate.forEach((item) => {
+      const employee = byNationalId.get(item.nationalId);
+      if (!employee) return;
+      rowsById.set(employee.id, { employeeId: employee.id, nameFromLine: String(item.fullName ?? '').trim() });
+      records.push({ ...item.baseRecord, employee_id: employee.id });
+    });
+  }
 
   if (!records.length) return NextResponse.json({ error: 'مفيش مسارات صالحة للتسجيل', problems }, { status: 400 });
 
@@ -77,8 +126,8 @@ export async function POST(request) {
     if (!current) return;
     const existingName = String(current.full_name ?? '').trim();
     if (existingName) return;
-    const safeName = arabicNameOnly(nameFromLine);
-    if (!safeName) return;
+    const safeName = cleanFullName(nameFromLine);
+    if (safeName.length < 3) return;
     const { error } = await admin.from('employees').update({ full_name: safeName }).eq('id', employeeId);
     if (!error) {
       current.full_name = safeName;
@@ -105,5 +154,5 @@ export async function POST(request) {
     return NextResponse.json({ error: `فشل إنشاء طلبات الوكيل المحلي: ${requestError.message}` }, { status: 500 });
   }
 
-  return NextResponse.json({ saved: saved ?? [], problems }, { status: 201 });
+  return NextResponse.json({ saved: saved ?? [], problems, createdEmployees: createdCount }, { status: 201 });
 }

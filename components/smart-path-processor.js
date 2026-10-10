@@ -40,7 +40,7 @@ export default function SmartPathProcessor({ employees, onOpenDrawer, onSubmit, 
     };
   }, [employees]);
 
-  const readyCount = useMemo(() => rows.filter((row) => (row.employeeIds ?? [row.employeeId]).some(Boolean) && row.isValidPath).length, [rows]);
+  const readyCount = useMemo(() => rows.filter((row) => row.isValidPath && (row.employeeIds ?? [row.employeeId]).some(Boolean) || (row.isValidPath && row.nationalId)).length, [rows]);
 
   async function pasteFromClipboard() {
     try {
@@ -77,20 +77,29 @@ export default function SmartPathProcessor({ employees, onOpenDrawer, onSubmit, 
     });
   }
 
+  function isRowReady(row) {
+    // جاهز لو المسار صالح + (موظف محدد أو الرقم القومي موجود — السيرفر هيحله وينشئ الموظف تلقائياً)
+    return Boolean(row.isValidPath && ((row.employeeIds ?? [row.employeeId]).some(Boolean) || row.nationalId));
+  }
+
+  const submitPayload = useCallback((row) => ({
+    employeeIds: row.employeeIds?.length ? row.employeeIds : (row.employeeId ? [row.employeeId] : []),
+    nationalId: row.nationalId ?? '',
+    employeeName: row.employeeName ?? '',
+    localPath: row.localPath,
+    month: row.month,
+    year: row.year,
+    category: 'شيت القبض',
+    fileName: row.fileName,
+  }), []);
+
   async function submitAll() {
-    const validRows = rows.filter((row) => (row.employeeIds ?? [row.employeeId]).some(Boolean) && row.isValidPath && row.month && row.year);
+    const validRows = rows.filter((row) => isRowReady(row) && row.month && row.year);
     if (!validRows.length) {
       setNotice('مفيش صفوف جاهزة للتسجيل. كمّل الموظف والقسم وتأكد من المسار.');
       return;
     }
-    const success = await onSubmit(validRows.map((row) => ({
-      employeeIds: row.employeeIds?.length ? row.employeeIds : [row.employeeId],
-      localPath: row.localPath,
-      month: row.month,
-      year: row.year,
-      category: 'شيت القبض',
-      fileName: row.fileName,
-    })));
+    const success = await onSubmit(validRows.map(submitPayload));
     if (success) {
       const submitted = new Set(validRows.map((row) => row.id));
       setRows((previous) => previous.filter((row) => !submitted.has(row.id)));
@@ -123,7 +132,7 @@ export default function SmartPathProcessor({ employees, onOpenDrawer, onSubmit, 
               <table className="smart-table">
                 <thead><tr><th>الموظف</th><th>الشهر والسنة</th><th>المسار</th><th>الحالة</th></tr></thead>
                 <tbody>{rows.map((row) => (
-                  <tr key={row.id} className={row.employeeId && row.isValidPath ? 'smart-row-ready' : 'smart-row-incomplete'}>
+                  <tr key={row.id} className={isRowReady(row) ? 'smart-row-ready' : 'smart-row-incomplete'}>
                     <td data-label="الموظف">
                       <div className="smart-employee-cell">
                         <button type="button" className="smart-employee-picker" aria-expanded={employeeMenu?.rowId === row.id} onClick={(event) => {
@@ -143,7 +152,7 @@ export default function SmartPathProcessor({ employees, onOpenDrawer, onSubmit, 
                     </td>
                     <td data-label="الشهر والسنة"><div className="smart-period"><select aria-label="الشهر" value={row.month} onChange={(event) => updateRow(row.id, { month: Number(event.target.value) })}>{MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select><input aria-label="السنة" inputMode="numeric" value={row.year} onChange={(event) => updateRow(row.id, { year: Number(event.target.value) })} /></div></td>
                     <td data-label="المسار"><span className="smart-path" title={row.localPath}>{row.localPath}</span>{row.pathError && <small className="smart-error">{row.pathError}</small>}</td>
-                    <td data-label="الحالة"><span className={`smart-status ${row.employeeId && row.isValidPath ? 'is-ready' : 'is-incomplete'}`}>{row.employeeId && row.isValidPath ? <><CheckCircle2 size={14} /> جاهز</> : 'محتاج مراجعة'}</span></td>
+                    <td data-label="الحالة"><span className={`smart-status ${isRowReady(row) ? 'is-ready' : 'is-incomplete'}`}>{isRowReady(row) ? <><CheckCircle2 size={14} /> جاهز للتسجيل</> : 'محتاج مراجعة'}</span></td>
                   </tr>
                 ))}</tbody>
               </table>

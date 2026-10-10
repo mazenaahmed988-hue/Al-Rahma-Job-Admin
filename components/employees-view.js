@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileSpreadsheet, Loader2, Pencil, RefreshCw, Search, Trash2, UserPlus, UserRoundX, UsersRound, X } from 'lucide-react';
 import EmployeeForm from '@/components/employee-form';
@@ -29,18 +29,46 @@ export default function EmployeesView({ initialEmployees }) {
   const [deleting, setDeleting] = useState(null);
   const [notice, setNotice] = useState(null);
   const [reloadError, setReloadError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const searchAbort = useRef(null);
 
   useEffect(() => { setEmployees(initialEmployees ?? []); }, [initialEmployees]);
 
+  // البحث سيرفر-سايد: كل ما الإدمن يكتب (بـ debounce 350ms) بنبعت ilike
+  // للسيرفر عشان يدوّر في الداتابيز كلها مش الصفحة الحالية — بيحل مشكلة حرف 'ي'
+  const trimmedQuery = query.trim();
+  useEffect(() => {
+    searchAbort.current?.abort();
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    if (!trimmedQuery) {
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/employees?search=${encodeURIComponent(trimmedQuery)}`, { signal: controller.signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'البحث فشل');
+        setEmployees(payload.employees ?? []);
+      } catch (error) {
+        if (error.name !== 'AbortError') setReloadError(error.message);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [trimmedQuery]);
+
   const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
+    // الفلترة المحلية مسؤولة عن الحالة (نشط/موقوف) بس — البحث نفسه حصل على السيرفر
     return employees.filter((employee) => {
       if (status === 'active' && !employee.is_active) return false;
       if (status === 'inactive' && employee.is_active) return false;
-      if (!term) return true;
-      return employee.full_name.toLowerCase().includes(term) || employee.national_id.includes(term);
+      return true;
     });
-  }, [employees, query, status]);
+  }, [employees, status]);
 
   const activeCount = employees.filter((employee) => employee.is_active).length;
 
@@ -155,6 +183,7 @@ export default function EmployeesView({ initialEmployees }) {
         <div className="search-box">
           <Search size={18} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث بالاسم أو الرقم القومي" aria-label="بحث عن موظف" />
+          {searching && <Loader2 size={16} className="spin" />}
           {query && <button type="button" onClick={() => setQuery('')} aria-label="مسح البحث"><X size={15} /></button>}
         </div>
         <div className="status-tabs" role="group" aria-label="تصفية الحالة">

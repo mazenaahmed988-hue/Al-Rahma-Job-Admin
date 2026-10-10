@@ -30,17 +30,19 @@ export async function POST(request) {
   return NextResponse.json({ employee: data }, { status: 201 });
 }
 
-export async function GET() {
+export async function GET(request) {
   const supabase = await createClient();
   const result = await supabase.auth.getUser();
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
 
   const admin = getAdminClient();
   const columns = ['id', 'full_name', 'national_id', 'is_active', 'created_at', 'department_id'];
-  const { data, error } = await admin
-    .from('employees')
-    .select(columns.join(', '))
-    .order('full_name');
+  // البحث سيرفر-سايد بـ ilike عشان يدوّر في الداتابيز كلها
+  // (مش في الصفحة الحالية بس) — ده بيحل مشكلة حرف 'ي' اللي كان بيقع آخر الأبجدية
+  const term = String(new URL(request.url).searchParams.get('search') ?? '').trim();
+  let query = admin.from('employees').select(columns.join(', '));
+  if (term) query = query.or(`full_name.ilike.%${term}%,national_id.ilike.%${term}%`);
+  const { data, error } = await query.order('full_name');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ employees: data ?? [], contactColumns: false });
 }
