@@ -8,6 +8,13 @@ const EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.png', '.
 // القسم بقى ثابت في الداتابيز بالقيمة دي (الأقسام بقت Hardcoded)
 const FIXED_CATEGORY = 'شيت القبض';
 
+// الاسم المسموح كتابته في الداتابيز لازم يكون حروف عربية بس (من غير إنجليزي/أرقام/رموز).
+// أي حاجة تانية (زي اسم مسار "MY computer work") بتترفض ومش بتمس الداتابيز.
+function arabicNameOnly(value) {
+  const arabic = (String(value ?? '').match(/\p{Script=Arabic}[\p{Script=Arabic}\s]*/gu) ?? []).join(' ').replace(/\s+/g, ' ').trim();
+  return /\p{Script=Arabic}/u.test(arabic) && arabic.replace(/\s+/g, '').length >= 3 ? arabic : '';
+}
+
 export async function POST(request) {
   const supabase = await createClient();
   const result = await supabase.auth.getUser();
@@ -69,10 +76,12 @@ export async function POST(request) {
     const current = employeeMap.get(employeeId);
     if (!current) return;
     const existingName = String(current.full_name ?? '').trim();
-    if (existingName || nameFromLine.length < 3) return;
-    const { error } = await admin.from('employees').update({ full_name: nameFromLine }).eq('id', employeeId);
+    if (existingName) return;
+    const safeName = arabicNameOnly(nameFromLine);
+    if (!safeName) return;
+    const { error } = await admin.from('employees').update({ full_name: safeName }).eq('id', employeeId);
     if (!error) {
-      current.full_name = nameFromLine;
+      current.full_name = safeName;
       employeeMap.set(employeeId, current);
     }
   }));
