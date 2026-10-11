@@ -100,8 +100,28 @@ export default function FilesView({ employees: initialEmployees, initialFiles })
     setNotice({ kind, text });
   }
 
-  function handleError(payload) {
-    flash('error', payload?.error ?? 'حصل خطأ غير متوقع');
+  // رسالة خطأ مفهومة للمستخدم حسب نوع الخطأ:
+  //  • خطأ شبكة (fetch فشل) → مشكلة اتصال بالإنترنت
+  //  • Timeout / 504 → ضغط على النظام
+  //  • أي خطأ تاني → خطأ غير متوقع في قاعدة البيانات
+  function humanizeError(error, response) {
+    if (error) {
+      // فشل الاتصال أصلاً (network/fetch error)
+      return 'عفواً، يبدو أن هناك مشكلة في اتصالك بالإنترنت، يرجى التحقق من الشبكة والمحاولة مرة أخرى.';
+    }
+    const status = response?.status ?? 0;
+    if (status === 504 || status === 408 || status === 502 || status === 503) {
+      return 'يوجد ضغط حالياً على النظام، يرجى الانتظار ثواني والمحاولة مرة أخرى.';
+    }
+    return 'حدث خطأ غير متوقع في قاعدة البيانات، يرجى إعادة تحميل الصفحة.';
+  }
+
+  function handleError(payload, response, error) {
+    // لو السيرفر رجّع رسالة عربية واضحة بنعرضها زي ما هي،
+    // وإلا بنعرض الرسالة المخصصة حسب نوع الخطأ.
+    const serverMessage = payload?.error;
+    const hasArabicServerMessage = typeof serverMessage === 'string' && /[\u0600-\u06FF]/.test(serverMessage);
+    flash('error', hasArabicServerMessage ? serverMessage : humanizeError(error, response));
   }
 
   /** اعتماد المسارات بعد مراجعة المعاينة الذكية */
@@ -113,16 +133,17 @@ export default function FilesView({ employees: initialEmployees, initialFiles })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows }),
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        handleError(payload);
+        handleError(payload, response);
         return false;
       }
       setFiles((previous) => [...(payload.saved ?? []), ...previous]);
       flash('ok', `تم اعتماد ${payload.saved?.length ?? 0} مسار وإرسالها للوكيل المحلي${payload.problems?.length ? ` · ${payload.problems.length} صف محتاج مراجعة` : ''}`);
       return true;
-    } catch {
-      flash('error', 'مفيش اتصال بالسيرفر');
+    } catch (error) {
+      // خطأ شبكة (fetch فشل) — رسالة مخصصة
+      handleError(null, null, error);
       return false;
     } finally {
       setBusy(false);

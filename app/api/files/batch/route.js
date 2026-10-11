@@ -8,6 +8,17 @@ const EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.png', '.
 // القسم بقى ثابت في الداتابيز بالقيمة دي (الأقسام بقت Hardcoded)
 const FIXED_CATEGORY = 'شيت القبض';
 
+// حجم دفعة الاستعلام الواحدة: بنقسّم الأرقام لمجموعات صغيرة عشان ما نتخطاش حد طول
+// الـ URL في PostgREST (خصوصاً لما العميل يرفع كمية مسارات كبيرة).
+const IN_CHUNK_SIZE = 50;
+
+// بنقسّم أي array لمجموعات بحجم محدّد. مثال: [1..120] → 3 دفعات (50, 50, 20).
+function chunk(list, size = IN_CHUNK_SIZE) {
+  const chunks = [];
+  for (let index = 0; index < list.length; index += size) chunks.push(list.slice(index, index + size));
+  return chunks;
+}
+
 // تنظيف الاسم: بنسمح بالعربي والإنجليزي معاً — بس trim وتنظيف المسافات الزايدة.
 // المسار ككتلة واحدة (C:\...) بيتصطاد لوحده في الـ Parser، فمفيش خطر إن مسار يتخزن كاسم.
 function cleanFullName(value) {
@@ -19,7 +30,29 @@ function cleanFullName(value) {
     .trim();
 }
 
+// بنحوّل أي خطأ من السيرفر/قاعدة البيانات لرسالة عربية مفهومة للمستخدم.
+//  • Timeout/504/ضغط على النظام → رسالة الضغط
+//  • غير كده → خطأ غير متوقع في قاعدة البيانات
+function friendlyError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? 0);
+  const code = String(error?.code ?? '');
+  const message = String(error?.message ?? '');
+  const isTimeout = status === 504 || status === 408 || status === 502 || status === 503
+    || /timeout|timed out|ETIMEDOUT|ECONNRESET|upstream/i.test(`${code} ${message}`);
+  if (isTimeout) return 'يوجد ضغط حالياً على النظام، يرجى الانتظار ثواني والمحاولة مرة أخرى.';
+  return 'حدث خطأ غير متوقع في قاعدة البيانات، يرجى إعادة تحميل الصفحة.';
+}
+
 export async function POST(request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    console.error('files/batch unexpected error:', error);
+    return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
+  }
+}
+
+async function handlePost(request) {
   const supabase = await createClient();
   const result = await supabase.auth.getUser();
   if (!isAdmin(result.data.user)) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
@@ -36,11 +69,26 @@ export async function POST(request) {
     return ids.map((id) => String(id ?? '').trim()).filter(Boolean);
   }))];
   const lineNationalIds = [...new Set(rows.map((row) => String(row.nationalId ?? '').replace(/[^0-9]/g, '')).filter((id) => id.length === 14))];
-  const { data: employees, error: employeeError } = (explicitIds.length || lineNationalIds.length)
-    ? await admin.from('employees').select('id, full_name, national_id')
-      .or([...(explicitIds.length ? [`id=in.(${explicitIds.join(',')})`] : []), ...(lineNationalIds.length ? [`national_id=in.(${lineNationalIds.join(',')})`] : [])].join(','))
-    : { data: [], error: null };
-  if (employeeError) return NextResponse.json({ error: employeeError.message }, { status: 500 });
+
+  // بنقرأ الموظفين باستعلامين منفصلين بـ .in() وبنمرّر القيم كـ Array of strings.
+  // وكمان بنقسّم كل Array لدُفَع (chunks) عشان مايضربش URL length limit في PostgREST
+  // لما عدد المسارات/الأرقام يكون كبير.
+  let employees = [];
+  if (explicitIds.length || lineNationalIds.length) {
+    const queries = [];
+    for (const part of chunk(explicitIds)) {
+      queries.push(admin.from('employees').select('id, full_name, national_id').in('id', part));
+    }
+    for (const part of chunk(lineNationalIds)) {
+      queries.push(admin.from('employees').select('id, full_name, national_id').in('national_id', part));
+    }
+    const results = await Promise.all(queries);
+    const failed = results.find((result) => result.error);
+    if (failed) return NextResponse.json({ error: friendlyError(failed.error) }, { status: 502 });
+    const merged = new Map();
+    results.forEach((result) => (result.data ?? []).forEach((employee) => merged.set(employee.id, employee)));
+    employees = [...merged.values()];
+  }
   const employeeMap = new Map((employees ?? []).map((employee) => [employee.id, employee]));
   const byNationalId = new Map((employees ?? []).map((employee) => [String(employee.national_id ?? ''), employee]));
 
@@ -102,7 +150,7 @@ export async function POST(request) {
       .map((item) => ({ full_name: cleanFullName(item.fullName) || `موظف ${item.nationalId.slice(-4)}`, national_id: item.nationalId, is_active: true }));
     const { data: created, error: createError } = await admin.from('employees').insert(toInsert)
       .select('id, full_name, national_id');
-    if (createError) return NextResponse.json({ error: `فشل إنشاء الموظفين الجدد: ${createError.message}` }, { status: 500 });
+    if (createError) return NextResponse.json({ error: friendlyError(createError) }, { status: 502 });
     createdCount = created?.length ?? 0;
     (created ?? []).forEach((employee) => {
       employeeMap.set(employee.id, employee);
@@ -137,7 +185,7 @@ export async function POST(request) {
 
   const { data: saved, error: insertError } = await admin.from('payslips').insert(records)
     .select('id, employee_id, category, year, month, month_label, local_path, file_name, mime_type, storage_path, status, is_visible, created_at, employees(id, full_name, national_id)');
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  if (insertError) return NextResponse.json({ error: friendlyError(insertError) }, { status: 502 });
 
   const requests = (saved ?? []).map((payslip) => ({
     employee_id: payslip.employee_id,
@@ -151,7 +199,7 @@ export async function POST(request) {
   const { error: requestError } = await admin.from('file_requests').insert(requests);
   if (requestError) {
     await admin.from('payslips').delete().in('id', (saved ?? []).map((payslip) => payslip.id));
-    return NextResponse.json({ error: `فشل إنشاء طلبات الوكيل المحلي: ${requestError.message}` }, { status: 500 });
+    return NextResponse.json({ error: friendlyError(requestError) }, { status: 502 });
   }
 
   return NextResponse.json({ saved: saved ?? [], problems, createdEmployees: createdCount }, { status: 201 });
