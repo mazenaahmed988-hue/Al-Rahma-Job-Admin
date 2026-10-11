@@ -30,6 +30,21 @@ export async function POST(request) {
   return NextResponse.json({ employee: data }, { status: 201 });
 }
 
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+// Supabase/PostgREST بياخد قيمة الـ filter جوه علامات اقتباس مفردة،
+// فلازم نهرّب أي علامة اقتباس أو فاصلة موجودة في كلمة البحث عشان ما يتكسرش الـ or().
+function escapeFilter(value) {
+  return value.replace(/[%,\(\)"']/g, ' ').trim();
+}
+
 export async function GET(request) {
   const supabase = await createClient();
   const result = await supabase.auth.getUser();
@@ -37,12 +52,38 @@ export async function GET(request) {
 
   const admin = getAdminClient();
   const columns = ['id', 'full_name', 'national_id', 'is_active', 'created_at', 'department_id'];
+
+  const params = new URL(request.url).searchParams;
   // البحث سيرفر-سايد بـ ilike عشان يدوّر في الداتابيز كلها
   // (مش في الصفحة الحالية بس) — ده بيحل مشكلة حرف 'ي' اللي كان بيقع آخر الأبجدية
-  const term = String(new URL(request.url).searchParams.get('search') ?? '').trim();
-  let query = admin.from('employees').select(columns.join(', '));
+  const term = escapeFilter(String(params.get('search') ?? '').trim());
+  const status = String(params.get('status') ?? 'all').trim();
+
+  // Pagination بـ offset/limit عشان الإدمن يقدر ينزل لحد آخر موظف في الداتابيز
+  const limit = clampInt(params.get('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const offset = clampInt(params.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
+
+  let query = admin.from('employees').select(columns.join(', '), { count: 'exact' });
   if (term) query = query.or(`full_name.ilike.%${term}%,national_id.ilike.%${term}%`);
-  const { data, error } = await query.order('full_name');
+  if (status === 'active') query = query.eq('is_active', true);
+  else if (status === 'inactive') query = query.eq('is_active', false);
+
+  // الترتيب الافتراضي: الأحدث إضافةً الأول (created_at DESC)، والاسم كفاصل ثانوي ثابت
+  // عشان ترقيم الصفحات يفضل مستقر.
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .order('full_name', { ascending: true })
+    .range(offset, offset + limit - 1);
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ employees: data ?? [], contactColumns: false });
+
+  const total = count ?? 0;
+  return NextResponse.json({
+    employees: data ?? [],
+    total,
+    limit,
+    offset,
+    hasMore: offset + (data?.length ?? 0) < total,
+    contactColumns: false,
+  });
 }

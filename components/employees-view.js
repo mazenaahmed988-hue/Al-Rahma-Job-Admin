@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileSpreadsheet, Loader2, Pencil, RefreshCw, Search, Trash2, UserPlus, UserRoundX, UsersRound, X } from 'lucide-react';
 import EmployeeForm from '@/components/employee-form';
@@ -17,9 +17,12 @@ function EmployeeAvatar({ employee }) {
   return <span className="emp-avatar" aria-hidden="true">{letters ? letters : <UserRoundX size={20} />}</span>;
 }
 
-export default function EmployeesView({ initialEmployees }) {
+const DEFAULT_PAGE_SIZE = 50;
+
+export default function EmployeesView({ initialEmployees, initialTotal, pageSize = DEFAULT_PAGE_SIZE }) {
   const [employees, setEmployees] = useState(initialEmployees ?? []);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [editing, setEditing] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -30,56 +33,101 @@ export default function EmployeesView({ initialEmployees }) {
   const [notice, setNotice] = useState(null);
   const [reloadError, setReloadError] = useState('');
   const [searching, setSearching] = useState(false);
-  const searchAbort = useRef(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // إجمالي الموظفين في الداتابيز (مش الموجود في الصفحة) — يجي من السيرفر
+  const [total, setTotal] = useState(initialTotal ?? (initialEmployees?.length ?? 0));
+  // آخر offset اتجاب عشان نكمل منه الدفعة اللي بعدها
+  const [offset, setOffset] = useState(initialEmployees?.length ?? 0);
+  // hasMore = لسه فيه دفعات مش محمّلة تحت
+  const [hasMore, setHasMore] = useState((initialEmployees?.length ?? 0) < (initialTotal ?? 0));
+  // بيانات آخر تحميل فشلت (عشان زرار "إعادة المحاولة" يعيدها بنفس المدخلات)
+  const [lastFetch, setLastFetch] = useState({ q: '', s: 'all' });
+  const sentinelRef = useRef(null);
+  const loadMoreRef = useRef(null);
 
-  useEffect(() => { setEmployees(initialEmployees ?? []); }, [initialEmployees]);
+  // بنبني رابط الطلب من البحث الحالي + الحالة + الـ offset/limit
+  const buildUrl = (currentOffset, limit, q, s) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(currentOffset), status: s });
+    if (q) params.set('search', q);
+    return `/api/employees?${params.toString()}`;
+  };
 
-  // البحث سيرفر-سايد: كل ما الإدمن يكتب (بـ debounce 350ms) بنبعت ilike
-  // للسيرفر عشان يدوّر في الداتابيز كلها مش الصفحة الحالية — بيحل مشكلة حرف 'ي'
-  const trimmedQuery = query.trim();
-  useEffect(() => {
-    searchAbort.current?.abort();
-    const controller = new AbortController();
-    searchAbort.current = controller;
-    if (!trimmedQuery) {
-      setSearching(false);
-      return;
+  // قراءة دفعة (offset/limit) من السيرفر + تحديث الإجمالي وحالة hasMore
+  const loadPage = useCallback(async (currentOffset, { q, s, replace }) => {
+    if (currentOffset === 0) {
+      if (q || s !== 'all') setSearching(true);
+    } else {
+      setLoadingMore(true);
     }
-    setSearching(true);
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/employees?search=${encodeURIComponent(trimmedQuery)}`, { signal: controller.signal });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || 'البحث فشل');
-        setEmployees(payload.employees ?? []);
-      } catch (error) {
-        if (error.name !== 'AbortError') setReloadError(error.message);
-      } finally {
-        setSearching(false);
-      }
-    }, 350);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [trimmedQuery]);
+    try {
+      const response = await fetch(buildUrl(currentOffset, pageSize, q, s), { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'تعذّر تحميل الموظفين');
+      const batch = payload.employees ?? [];
+      const serverTotal = payload.total ?? batch.length;
+      setEmployees((prev) => {
+        if (replace) return batch;
+        // منع التكرار لو حصل تداخل في الدفعات باي حال
+        const seen = new Set(prev.map((item) => item.id));
+        return [...prev, ...batch.filter((item) => !seen.has(item.id))];
+      });
+      setTotal(serverTotal);
+      setOffset(currentOffset + batch.length);
+      setHasMore(typeof payload.hasMore === 'boolean' ? payload.hasMore : currentOffset + batch.length < serverTotal);
+      setReloadError('');
+    } catch (error) {
+      setReloadError(error.message || 'مفيش اتصال بالسيرفر');
+    } finally {
+      setSearching(false);
+      setLoadingMore(false);
+    }
+  }, [pageSize]);
 
-  const filtered = useMemo(() => {
-    // الفلترة المحلية مسؤولة عن الحالة (نشط/موقوف) بس — البحث نفسه حصل على السيرفر
-    return employees.filter((employee) => {
-      if (status === 'active' && !employee.is_active) return false;
-      if (status === 'inactive' && employee.is_active) return false;
-      return true;
-    });
-  }, [employees, status]);
+  // debounce للبحث عشان ما نضربش السيرفر مع كل حرف
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  // أول ما البحث أو الفلتر يتغيّر: نرجع لأول الداتابيز ونحمّل من (offset = 0)
+  useEffect(() => {
+    setLastFetch({ q: debouncedQuery, s: status });
+    loadPage(0, { q: debouncedQuery, s: status, replace: true });
+  }, [debouncedQuery, status, loadPage]);
+
+  // نخلي أحدث نسخة من دالة التحميل متاحة للمراقب (IntersectionObserver) من غير إعادة إنشائه
+  useEffect(() => { loadMoreRef.current = () => { if (hasMore && !loadingMore && !searching) loadPage(offset, { q: lastFetch.q, s: lastFetch.s, replace: false }); }; }, [hasMore, loadingMore, searching, offset, lastFetch, loadPage]);
+
+  // Infinite scroll: أول ما الـ sentinel تحت الجدول يظهر في الشاشة نحمّل الدفعة اللي بعدها
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreRef.current?.();
+    }, { rootMargin: '240px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const activeCount = employees.filter((employee) => employee.is_active).length;
+  // عدد النتائج الحالية المعروض (المحلي) مقابل الإجمالي اللي في السيرفر
+  const shownCount = employees.length;
+  const isFiltered = Boolean(debouncedQuery) || status !== 'all';
 
+  // الموظف الجديد الأحدث دايمًا بيتحط فوق (created_at DESC)
   function handleSaved({ type, employee }) {
     if (type === 'created') {
-      setEmployees((prev) => [...prev, employee].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
+      setEmployees((prev) => [employee, ...prev.filter((item) => item.id !== employee.id)]);
+      setTotal((prev) => prev + 1);
+      setOffset((prev) => prev + 1);
       setNotice({ kind: 'ok', text: 'تمت إضافة الموظف بنجاح' });
       return;
     }
     if (type === 'bulk') {
-      setEmployees((prev) => [...prev, ...employee].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
+      const list = Array.isArray(employee) ? employee : [];
+      setEmployees((prev) => [...list, ...prev]);
+      setTotal((prev) => prev + list.length);
+      setOffset((prev) => prev + list.length);
       return;
     }
     setEmployees((prev) => prev.map((item) => (item.id === employee.id ? { ...item, ...employee } : item)));
@@ -87,8 +135,11 @@ export default function EmployeesView({ initialEmployees }) {
   }
 
   function handleBulkSaved(saved) {
-    setEmployees((prev) => [...prev, ...saved].sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar')));
-    setNotice({ kind: 'ok', text: `تمت إضافة ${saved.length} موظف باللصق المجمع` });
+    const list = Array.isArray(saved) ? saved : [];
+    setEmployees((prev) => [...list, ...prev]);
+    setTotal((prev) => prev + list.length);
+    setOffset((prev) => prev + list.length);
+    setNotice({ kind: 'ok', text: `تمت إضافة ${list.length} موظف باللصق المجمع` });
   }
 
   async function toggleStatus(employee) {
@@ -114,13 +165,8 @@ export default function EmployeesView({ initialEmployees }) {
   async function reload() {
     setReloadError('');
     setNotice(null);
-    try {
-      const list = await fetch('/api/employees').then((response) => response.json());
-      if (list.error) throw new Error(list.error);
-      setEmployees(list.employees ?? []);
-    } catch (error) {
-      setReloadError(error.message);
-    }
+    // نرجع لأول الداتابيز ونجيب أحدث دفعة بالأحدث إضافةً
+    await loadPage(0, { q: debouncedQuery, s: status, replace: true });
   }
 
   async function confirmDelete() {
@@ -133,6 +179,8 @@ export default function EmployeesView({ initialEmployees }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'الحذف فشل');
       setEmployees((prev) => prev.filter((item) => item.id !== target.id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      setOffset((prev) => Math.max(0, prev - 1));
       setNotice({ kind: 'ok', text: `تم حذف ${target.full_name}` });
     } catch (error) {
       setNotice({ kind: 'error', text: error.message });
@@ -145,7 +193,7 @@ export default function EmployeesView({ initialEmployees }) {
   function exportData() {
     const headers = ['الاسم', 'الرقم القومي', 'الحالة'];
     const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const lines = filtered.map((employee) => [
+    const lines = employees.map((employee) => [
       employee.full_name,
       employee.national_id,
       employee.is_active ? 'نشط' : 'موقوف',
@@ -161,7 +209,7 @@ export default function EmployeesView({ initialEmployees }) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setNotice({ kind: 'ok', text: `تم تصدير ${filtered.length} موظف` });
+    setNotice({ kind: 'ok', text: `تم تصدير ${employees.length} موظف من المعروض` });
   }
 
   return (
@@ -170,11 +218,11 @@ export default function EmployeesView({ initialEmployees }) {
         <div>
           <span className="section-kicker">إدارة الموظفين</span>
           <h2>قائمة الموظفين</h2>
-          <p>{employees.length} موظف · {activeCount} نشط · {employees.length - activeCount} موقوف</p>
+          <p>{isFiltered ? `معروض ${shownCount} من ${total}` : `إجمالي ${total} موظف`} · {activeCount} نشط في المعروض</p>
         </div>
         <div className="heading-actions">
           <button type="button" className="ghost-button" onClick={reload} aria-label="تحديث البيانات"><RefreshCw size={17} /></button>
-          <button type="button" className="ghost-button" onClick={exportData} disabled={!filtered.length}><FileSpreadsheet size={17} /> تصدير البيانات</button>
+          <button type="button" className="ghost-button" onClick={exportData} disabled={!employees.length}><FileSpreadsheet size={17} /> تصدير البيانات</button>
           <button type="button" className="primary-button" onClick={() => setBulkOpen(true)}><UserPlus size={17} /> إضافة موظفين باللصق</button>
         </div>
       </div>
@@ -196,9 +244,14 @@ export default function EmployeesView({ initialEmployees }) {
       {notice && (
         <motion.p className={`notice notice--${notice.kind}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>{notice.text}</motion.p>
       )}
-      {reloadError && <p className="notice notice--error" role="alert">{reloadError}</p>}
+      {reloadError && (
+        <p className="notice notice--error" role="alert">
+          {reloadError}{' '}
+          <button type="button" onClick={() => loadPage(0, { ...lastFetch, replace: true })}>إعادة المحاولة</button>
+        </p>
+      )}
 
-      {filtered.length === 0 ? (
+      {employees.length === 0 && !searching ? (
         <div className="empty-state glass">
           <UsersRound size={34} />
           <strong>{employees.length ? 'مفيش نتائج للبحث ده' : 'لسه مفيش موظفين مسجلين'}</strong>
@@ -217,7 +270,7 @@ export default function EmployeesView({ initialEmployees }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((employee) => (
+                {employees.map((employee) => (
                   <tr key={employee.id} className={employee.is_active ? '' : 'row-inactive'}>
                     <td data-label="الموظف">
                       <div className="emp-cell">
@@ -252,7 +305,7 @@ export default function EmployeesView({ initialEmployees }) {
           </div>
 
           <div className="cards-list">
-            {filtered.map((employee) => (
+            {employees.map((employee) => (
               <motion.article key={employee.id} className={`emp-card glass ${employee.is_active ? '' : 'card-inactive'}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="emp-card-head">
                   <EmployeeAvatar employee={employee} />
@@ -279,6 +332,21 @@ export default function EmployeesView({ initialEmployees }) {
               </motion.article>
             ))}
           </div>
+
+          {/* Sentinel الـ Infinite scroll: أول ما يبان بنحمّل الدفعة اللي بعدها */}
+          <div ref={sentinelRef} className="employees-sentinel" aria-hidden="true" />
+
+          {loadingMore && (
+            <div className="employees-loadmore" role="status"><Loader2 size={18} className="spin" /> بتحميل المزيد من الموظفين...</div>
+          )}
+          {!loadingMore && hasMore && (
+            <div className="employees-loadmore">
+              <button type="button" className="ghost-button" onClick={() => loadPage(offset, { ...lastFetch, replace: false })}>تحميل المزيد</button>
+            </div>
+          )}
+          {!hasMore && employees.length > pageSize && (
+            <p className="employees-end">وصلت لآخر موظف — تم تحميل الكل ({employees.length})</p>
+          )}
         </>
       )}
 
